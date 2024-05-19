@@ -38,8 +38,10 @@ class FlexSensorConnection:
         """
         ADC_flex = self.pin_list[i].read() * 1000
         if ADC_flex == 0:
-            self._logger.error(f"Sensor {i} not connected properly")
-            return
+            self.logger().error(f"Sensor {i} not connected properly")
+            V_flex = None
+            R_flex = None
+            return ADC_flex, V_flex, R_flex
 
         V_flex = ADC_flex * self.VCC / 1023
         if V_flex > self.v_max:

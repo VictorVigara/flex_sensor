@@ -1,8 +1,7 @@
 import rclpy
+from flex_sensor_connnection import FlexSensorConnection
+from flex_sensor_plot import FlexSensorPlot
 from rclpy.node import Node
-
-from .flex_sensor_connnection import FlexSensorConnection
-from .flex_sensor_plot import FlexSensorPlot
 
 
 class flexDriver(Node):
@@ -17,15 +16,16 @@ class flexDriver(Node):
 
         self.timer_period = 0.05  # Sensor reading frequency
 
-        self.n_sensors = 1
+        self.n_sensors = 2
         self.sensor_locations = [
-            0
+            0,
+            90,
         ]  # List containing sensor angle location (0deg right - counterclockwise)
 
         self.VCC = 5  # Voltage at arduino 5V line
         self.R_DIV = 82000  # Resistor
 
-        self.radial_plot = True
+        self.radial_plot = False
         self.linear_plot = True
 
         # Connection parameters

@@ -24,8 +24,27 @@ class FlexSensorPlot:
         self.max_time_plot = plot_time
         self.ADC_min, self.ADC_max = arduino_analog_range
 
-    def plot_initialization(self):
+    def init_linear_plot(self):
+        ### Time line plot ###
 
+        if self.linear_plot:
+            self.fig_time, self.ax_time = plt.subplots(4)
+            self.fig_time.suptitle("Flex sensor output timeline")
+
+            self.max_recorded_values = int(self.max_time_plot / self.timer_period)
+
+            self.x_axis_time = np.linspace(
+                0, self.max_time_plot, self.max_recorded_values
+            )
+
+            self.sensor_values = []
+            self.plot_lines = []
+            for i in range(self.n_sensors):
+                self.sensor_values.append(np.zeros(self.max_recorded_values))
+                (line,) = self.ax_time[i].plot(self.x_axis_time, self.sensor_values[i])
+                self.plot_lines.append(line)
+
+    def init_radial_plot(self):
         ### Radial plot ###
         if self.radial_plot:
             self.fig, self.ax = plt.subplots(subplot_kw={"projection": "polar"})
@@ -40,40 +59,15 @@ class FlexSensorPlot:
             self.ax.grid(True)
             self.ax.set_title("Flex sensor output", va="bottom")
 
+    def plot_initialization(self):
+
+        if self.linear_plot or self.radial_plot:
             # Enable interactive mode
             plt.ion()
-            plt.show()
+            # plt.show()
 
-        ### Time line plot ###
-        if self.linear_plot:
-            self.fig_time, self.ax_time = plt.subplots(4)
-            self.fig_time.suptitle("Flex sensor output timeline")
-            # Remove outer labels for inner plots
-            for ax in self.ax_time.flat:
-                ax.label_outer()
-
-            self.max_recorded_values = int(self.max_time_plot / self.timer_period)
-
-            self.x_axis_time = np.linspace(
-                0, self.max_time_plot, self.max_recorded_values
-            )
-            self.y_axis = np.zeros(self.max_recorded_values)
-
-            self.plot_lines = []
-            for i in range(self.n_sensors):
-                (line,) = self.ax_time[i].plot(self.x_axis_time, self.y_axis)
-                self.plot_lines.append(line)
-
-            self.recorded_values = []
-            self.x_axis_time = []
-            # Append as many lists as sensors initialized with 0
-            for i in range(self.n_sensors):
-                self.recorded_values.append([])
-                self.ax_time[i].set_ylim([100, 600])
-                for j in range(self.max_recorded_values):
-                    self.recorded_values[i].append(0)
-                    if i == 0:
-                        self.x_axis_time.append(self.timer_period * j)
+        self.init_linear_plot()
+        self.init_radial_plot()
 
     def plot_flex_value(self, value, sensor_idx):
         """
@@ -84,6 +78,15 @@ class FlexSensorPlot:
             sensor_location: sensor angle location (0deg right - counterclockwise)
         """
 
+        if False:
+            self.data = np.append(self.data, value)
+
+            if len(self.data) > 100:
+                self.data = self.data[-100:]
+            self.test_line.set_ydata(self.data)
+            self.test_line.set_xdata(np.linspace(0, 100, len(self.data)))
+            plt.draw()
+            plt.pause(0.1)
         ### RADIAL ###
         # Clear the previous scatter plot while keeping the axis and labels intact
         if self.radial_plot:
@@ -104,19 +107,24 @@ class FlexSensorPlot:
 
             # Redraw the canvas and process GUI events
             self.fig.canvas.draw()
-            self.fig.canvas.flush_events()
 
         ### LINEAR ###
         if self.linear_plot:
-            # Delete last measurement
-            self.recorded_values[sensor_idx].pop(0)
-            self.recorded_values[sensor_idx].append(value)
 
-            self.plot_lines[sensor_idx].set_ydata(np.array(self.recorded_values))
+            self.sensor_values[sensor_idx] = np.append(
+                self.sensor_values[sensor_idx], value
+            )
 
-            self.ax_time[sensor_idx].set_ylim([100, 600])
+            if len(self.sensor_values[sensor_idx]) > self.max_recorded_values:
+                self.sensor_values[sensor_idx] = self.sensor_values[sensor_idx][
+                    -self.max_recorded_values :
+                ]
 
-            # plt.show()
+            self.plot_lines[sensor_idx].set_ydata(self.sensor_values[sensor_idx])
+            self.plot_lines[sensor_idx].set_xdata(self.x_axis_time)
+            self.ax_time[sensor_idx].set_ylim([0, 1023])
 
-            self.fig_time.canvas.draw()
-            self.fig_time.canvas.flush_events()
+            plt.draw()
+
+        if self.linear_plot or self.radial_plot:
+            plt.pause(0.001)
