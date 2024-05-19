@@ -1,7 +1,8 @@
 import rclpy
-from flex_sensor_connnection import FlexSensorConnection
-from flex_sensor_plot import FlexSensorPlot
 from rclpy.node import Node
+
+from .flex_sensor_connnection import FlexSensorConnection
+from .flex_sensor_plot import FlexSensorPlot
 
 
 class flexDriver(Node):

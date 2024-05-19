@@ -47,17 +47,22 @@ class FlexSensorPlot:
     def init_radial_plot(self):
         ### Radial plot ###
         if self.radial_plot:
-            self.fig, self.ax = plt.subplots(subplot_kw={"projection": "polar"})
-            self.ax.set_rmax(self.ADC_max)
+            self.fig, self.ax_radial = plt.subplots(subplot_kw={"projection": "polar"})
+            self.ax_radial.set_rmax(self.ADC_max)
             rticks = list(
                 np.array(np.linspace(self.ADC_min, self.ADC_max, 10)).astype(int)
             )
-            self.ax.set_rticks(rticks)  # Less radial ticks
-            self.ax.set_rlabel_position(
+            self.ax_radial.set_rticks(rticks)  # Less radial ticks
+            self.ax_radial.set_rlabel_position(
                 -45
             )  # Move radial labels away from plotted line
-            self.ax.grid(True)
-            self.ax.set_title("Flex sensor output", va="bottom")
+            self.ax_radial.grid(True)
+            self.ax_radial.set_title("Flex sensor output", va="bottom")
+
+            self.theta = np.array(self.sensor_locations) * (np.pi / 180)
+            self.values = []
+            self.width = np.ones(4) * (np.pi / 4)
+            # self.colors = plt.cm.viridis(self.values / 10.)
 
     def plot_initialization(self):
 
@@ -78,36 +83,26 @@ class FlexSensorPlot:
             sensor_location: sensor angle location (0deg right - counterclockwise)
         """
 
-        if False:
-            self.data = np.append(self.data, value)
-
-            if len(self.data) > 100:
-                self.data = self.data[-100:]
-            self.test_line.set_ydata(self.data)
-            self.test_line.set_xdata(np.linspace(0, 100, len(self.data)))
-            plt.draw()
-            plt.pause(0.1)
         ### RADIAL ###
         # Clear the previous scatter plot while keeping the axis and labels intact
         if self.radial_plot:
-            self.ax.cla()
 
-            location = self.sensor_locations[sensor_idx] * 360 / np.pi
-            self.ax.scatter(location, value)
+            self.values.append(value)
 
-            # Reapply labels and settings since we cleared the plot
-            self.ax.set_rmax(self.ADC_max)
-            rticks = list(
-                np.array(np.linspace(self.ADC_min, self.ADC_max, 10)).astype(int)
-            )
-            self.ax.set_rticks(rticks)
-            self.ax.set_rlabel_position(-45)
-            self.ax.grid(True)
-            self.ax.set_title("Flex sensor output", va="bottom")
-
-            # Redraw the canvas and process GUI events
-            self.fig.canvas.draw()
-
+            if (sensor_idx + 1) == self.n_sensors:
+                self.ax_radial.cla()
+                self.values = np.array(self.values)
+                self.ax_radial.bar(
+                    self.theta,
+                    self.values,
+                    width=self.width[: self.n_sensors],
+                    bottom=0.0,
+                    alpha=0.5,
+                )
+                self.ax_radial.set_rmax(1023)
+                rticks = list(np.array(np.linspace(0, 1023, 10)).astype(int))
+                self.ax_radial.set_rticks(rticks)  # Less radial ticks
+                self.values = []
         ### LINEAR ###
         if self.linear_plot:
 
@@ -124,7 +119,6 @@ class FlexSensorPlot:
             self.plot_lines[sensor_idx].set_xdata(self.x_axis_time)
             self.ax_time[sensor_idx].set_ylim([0, 1023])
 
-            plt.draw()
-
         if self.linear_plot or self.radial_plot:
+            plt.draw()
             plt.pause(0.001)
