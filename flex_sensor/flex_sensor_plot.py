@@ -121,4 +121,4 @@ class FlexSensorPlot:
 
         if self.linear_plot or self.radial_plot:
             plt.draw()
-            plt.pause(0.001)
+            plt.pause(0.0001)
