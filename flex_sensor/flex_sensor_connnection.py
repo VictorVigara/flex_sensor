@@ -44,12 +44,14 @@ class FlexSensorConnection:
             return ADC_flex, V_flex, R_flex
 
         V_flex = ADC_flex * self.VCC / 1023
-        if V_flex > self.v_max:
-            self.v_max = V_flex
-        if V_flex < self.v_min:
-            self.v_min = V_flex
+        if ADC_flex > self.v_max:
+            self.v_max = ADC_flex
+        if ADC_flex < self.v_min:
+            self.v_min = ADC_flex
         R_flex = self.R_DIV * (self.VCC / V_flex - 1)
-        self.logger().info(f"A{i} V: {V_flex}V / R:{R_flex} ohms")
-        self.logger().info(f"V_max: {self.v_max} / V_min: {self.v_min}")
+        # self.logger().info(f"A{i} V: {V_flex}V / R:{R_flex} ohms")
+        self.logger().info(
+            f" Sensor {i} | ADC: {ADC_flex} / ADC_max: {self.v_max} / ADC_min: {self.v_min}"
+        )
 
         return ADC_flex, V_flex, R_flex

@@ -70,9 +70,10 @@ class flexDriver(Node):
         self.flex_plot.plot_initialization()
 
         # Recorder
-        self.data_recorder = FlexSensorDataRecorder(
-            self.record_time, self.timer_period, self.logger
-        )
+        if self.record_data:
+            self.data_recorder = FlexSensorDataRecorder(
+                self.record_time, self.timer_period, self.logger
+            )
 
         # Timer
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
