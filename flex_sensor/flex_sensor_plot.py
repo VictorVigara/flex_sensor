@@ -20,7 +20,7 @@ class FlexSensorPlot:
         self.linear_plot = linear_plot
         self.timer_period = freq
         self.n_sensors = n_sensors
-        self.sensor_locations = sensor_locations
+        self.sensor_locations = sensor_locations[: self.n_sensors]
         self.max_time_plot = plot_time
         self.ADC_min, self.ADC_max = arduino_analog_range
 
