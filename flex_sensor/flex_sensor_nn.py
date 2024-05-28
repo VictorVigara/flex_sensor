@@ -1,17 +1,21 @@
 import os
 import re
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
+from sklearn.preprocessing import StandardScaler
+from torch.utils.data import DataLoader, Dataset, random_split
 
+# Define the folder containing the CSV files
 data_folder_path = (
     "/home/victor/ws_sensor_combined/src/flex_sensor/data/train_nn_28_05/"
 )
 
+# List all CSV files in the folder
 file_list = [f for f in os.listdir(data_folder_path) if f.endswith(".csv")]
 
 # Initialize lists to store data and orientations
@@ -28,26 +32,26 @@ for file_name in file_list:
     if match:
         orientation = int(match.group(1))
 
-        data = pd.read_csv(data_folder_path + file_name).values.tolist()
+        data = pd.read_csv(
+            os.path.join(data_folder_path, file_name), header=None
+        ).values
+
+        # Append the data and orientation to the lists
         all_data.append(data)
-        all_orientations.append(np.full(len(data), orientation))
+        all_orientations.append(np.full(data.shape[0], orientation))
 
-X = np.vstack(np.array(all_data))
-y = np.hstack(np.array(all_orientations))
+# Concatenate all data arrays
+all_data = np.vstack(all_data)
 
+# Normalize the data
+scaler = StandardScaler()
+all_data = scaler.fit_transform(all_data)
 
-# Load the data from CSV files
-# data_0 = np.array(pd.read_csv('/home/victor/ws_sensor_combined/src/flex_sensor/data/28_05_nn_test/orientation_0_pos_3.5.csv').values.tolist())
-# data_90 = np.array(pd.read_csv('/home/victor/ws_sensor_combined/src/flex_sensor/data/28_05_nn_test/orientation_90_pos_3.5.csv').values.tolist())
-# data_180 = np.array(pd.read_csv('/home/victor/ws_sensor_combined/src/flex_sensor/data/28_05_nn_test/orientation_180_pos_3.5.csv').values.tolist())
-# data_270 = np.array(pd.read_csv('/home/victor/ws_sensor_combined/src/flex_sensor/data/28_05_nn_test/orientation_270_pos_3.5.csv').values.tolist())
-# X = np.vstack((data_0, data_90, data_180, data_270))
+# Concatenate all orientation arrays
+all_orientations = np.hstack(all_orientations)
 
-# orientation_0 = np.full((data_0.shape[0],), 0)
-# orientation_90 = np.full((data_90.shape[0],), 90)
-# orientation_180 = np.full((data_180.shape[0],), 180)
-# orientation_270 = np.full((data_270.shape[0],), 270)
-# y = np.hstack((orientation_0, orientation_90, orientation_180, orientation_270))
+# Convert angles to radians
+all_orientations = np.radians(all_orientations)
 
 # Define the PyTorch dataset
 class SensorDataset(Dataset):
@@ -62,17 +66,21 @@ class SensorDataset(Dataset):
         return self.X[idx], self.y[idx]
 
 
-# Create dataset and dataloader
-dataset = SensorDataset(X, y)
-dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
+# Create dataset and split into training and validation sets
+dataset = SensorDataset(all_data, all_orientations)
+train_size = int(0.8 * len(dataset))
+val_size = len(dataset) - train_size
+train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
 
 # Define the neural network
 class SimpleNN(nn.Module):
     def __init__(self):
         super(SimpleNN, self).__init__()
-        self.fc1 = nn.Linear(4, 16)  # 4 input features
-        self.fc2 = nn.Linear(16, 32)
-        self.fc3 = nn.Linear(32, 1)
+        self.fc1 = nn.Linear(4, 64)
+        self.fc2 = nn.Linear(64, 64)
+        self.fc3 = nn.Linear(64, 1)
 
     def forward(self, x):
         x = torch.relu(self.fc1(x))
@@ -86,38 +94,83 @@ model = SimpleNN()
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
+# Store the training and validation losses
+training_losses = []
+validation_losses = []
+
+# Track the best validation loss
+best_val_loss = float("inf")
+
 # Train the model
-num_epochs = 2000
+num_epochs = 100
 for epoch in range(num_epochs):
-    for inputs, labels in dataloader:
+    model.train()
+    epoch_loss = 0
+    for inputs, labels in train_loader:
         optimizer.zero_grad()
         outputs = model(inputs)
         loss = criterion(outputs.squeeze(), labels)
         loss.backward()
         optimizer.step()
+        epoch_loss += loss.item()
+
+    avg_epoch_loss = epoch_loss / len(train_loader)
+    training_losses.append(avg_epoch_loss)
+
+    # Evaluate on validation set
+    model.eval()
+    val_loss = 0
+    with torch.no_grad():
+        for inputs, labels in val_loader:
+            outputs = model(inputs)
+            loss = criterion(outputs.squeeze(), labels)
+            val_loss += loss.item()
+    avg_val_loss = val_loss / len(val_loader)
+    validation_losses.append(avg_val_loss)
+
+    # Save the model if validation loss is the best we've seen so far
+    if avg_val_loss < best_val_loss:
+        best_val_loss = avg_val_loss
+        torch.save(model.state_dict(), "best_model.pth")
 
     if (epoch + 1) % 10 == 0:
-        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}")
+        print(
+            f"Epoch [{epoch + 1}/{num_epochs}], Training Loss: {avg_epoch_loss:.4f}, Validation Loss: {avg_val_loss:.4f}"
+        )
+
+# Plot the training and validation loss
+plt.figure(figsize=(10, 6))
+plt.plot(training_losses, label="Training Loss")
+plt.plot(validation_losses, label="Validation Loss")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.title("Training and Validation Loss Over Epochs")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Load the best model
+model.load_state_dict(torch.load("best_model.pth"))
 
 # Test the model
 # Create a test dataset
-test_data_0 = pd.read_csv(
-    "/home/victor/ws_sensor_combined/src/flex_sensor/data/45_test_nn/orientation_45_pos_3.5.csv"
-)
-test_data_0["orientation"] = 0
-test_X = test_data_0.iloc[:, :-1].values
-test_y = np.radians(test_data_0.iloc[:, -1].values)
+test_data_45 = pd.read_csv(
+    "/home/victor/ws_sensor_combined/src/flex_sensor/data/45_test_nn/orientation_45_pos_3.5.csv",
+    header=None,
+).values
+
+# Normalize the test data
+test_data_45 = scaler.transform(test_data_45)
 
 # Convert test data to tensors
-test_X = torch.tensor(test_X, dtype=torch.float32)
-test_y = torch.tensor(test_y, dtype=torch.float32)
+test_X = torch.tensor(test_data_45, dtype=torch.float32)
 
 # Evaluate the model
 model.eval()
 with torch.no_grad():
     predictions = model(test_X).squeeze()
-    test_loss = criterion(predictions, test_y)
-    print(f"Test Loss: {test_loss.item():.4f}")
 
 # Convert predictions back to degrees for interpretation
-print(predictions)
+predictions_deg = np.degrees(predictions.numpy())
+print("Predictions in degrees:")
+print(predictions_deg)
