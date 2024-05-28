@@ -29,11 +29,13 @@ class flexDriver(Node):
         self.VCC = 5  # Voltage at arduino 5V line
         self.R_DIV = 82000  # Resistor
 
-        self.radial_plot = False
+        self.radial_plot = True
         self.linear_plot = True
 
-        self.record_data = True
+        self.record_data = False
         self.record_time = 1
+
+        self.calibration = False
 
         # Connection parameters
         self.port = "/dev/ttyACM0"
@@ -50,12 +52,29 @@ class flexDriver(Node):
         ######################
         self.logger = self.get_logger
 
+        # Initialize flex sensor connection
         self.flex_conn = FlexSensorConnection(
-            self.n_sensors, self.VCC, self.R_DIV, self.port, self.logger
+            self.n_sensors,
+            self.VCC,
+            self.R_DIV,
+            self.port,
+            self.logger,
+            self.sensor_locations,
         )
         self.flex_conn.flex_sensors_initialization()
 
-        self.flex_plot = FlexSensorPlot(
+        if self.calibration:
+            (
+                self.min_sensor_range,
+                self.max_sensor_range,
+            ) = self.flex_conn.get_sensor_range()
+            self.flex_conn.initialize_steady_values()
+        else:
+            self.flex_conn.read_sensor_range_from_json()
+            self.flex_conn.initialize_steady_values()
+
+        # Initialize flex sensor plot
+        self.flex_plot_analog = FlexSensorPlot(
             self.flex_conn,
             self.radial_plot,
             self.linear_plot,
@@ -65,11 +84,22 @@ class flexDriver(Node):
             self.max_time_plot,
             [self.ADC_min, self.ADC_max],
         )
+        self.flex_plot_percent = FlexSensorPlot(
+            self.flex_conn,
+            self.radial_plot,
+            self.linear_plot,
+            self.timer_period,
+            self.n_sensors,
+            self.sensor_locations,
+            self.max_time_plot,
+            [0, 100],
+        )
 
         # Plots
-        self.flex_plot.plot_initialization()
+        self.flex_plot_analog.plot_initialization(title="Analog output")
+        self.flex_plot_percent.plot_initialization(title="NOrmalized output (%)")
 
-        # Recorder
+        # Initialize flex sensor data recorder
         if self.record_data:
             self.data_recorder = FlexSensorDataRecorder(
                 self.record_time, self.timer_period, self.logger
@@ -81,16 +111,13 @@ class flexDriver(Node):
     def timer_callback(self):
         """Main loop reading and plotting flex sensor values"""
 
-        ADC_values = []
-        for i in range(self.n_sensors):
-            ADC_flex, V_flex, R_flex = self.flex_conn.get_flex_sensor_output(i)
-            ADC_values.append(ADC_flex)
-            # Continue if no sensor reading
-            if ADC_flex == 0:
-                continue
+        ADC_values = self.flex_conn.read_sensor()
 
-            # Plots
-            self.flex_plot.plot_flex_value(ADC_flex, i)
+        # Plots
+        self.flex_plot_analog.plot_flex_value(ADC_values, [0, 1023])
+
+        sensor_percent = self.flex_conn.get_sensor_percentage()
+        self.flex_plot_percent.plot_flex_value(sensor_percent, [0, 100])
 
         if self.record_data:
             self.data_recorder.record_data(ADC_values)
