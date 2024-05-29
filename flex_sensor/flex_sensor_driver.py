@@ -26,6 +26,8 @@ class flexDriver(Node):
             270,
         ]  # List containing sensor angle location (0deg right - counterclockwise)
 
+        self.beam_discretization = 45
+
         self.VCC = 5  # Voltage at arduino 5V line
         self.R_DIV = 82000  # Resistor
 
@@ -60,6 +62,7 @@ class flexDriver(Node):
             self.port,
             self.logger,
             self.sensor_locations,
+            self.beam_discretization,
         )
         self.flex_conn.flex_sensors_initialization()
 

@@ -10,7 +10,9 @@ from .flex_sensor_nn import SimpleNN
 
 
 class FlexSensorConnection:
-    def __init__(self, n_sensors, VCC, R_DIV, port, logger, sensor_locations) -> None:
+    def __init__(
+        self, n_sensors, VCC, R_DIV, port, logger, sensor_locations, beam_discretization
+    ) -> None:
 
         self.n_sensors = n_sensors
         self.VCC = VCC
@@ -19,7 +21,8 @@ class FlexSensorConnection:
         self.logger = logger
         self.sensor_locations = sensor_locations
 
-        self.beam_discretization = 15
+        self.beam_discretization = beam_discretization
+        num_classes = int(360 / self.beam_discretization)  # Total number of classes
 
         ### INITIALIZATION ###
         self.pin_list = []  # Sensor pin access list
@@ -40,7 +43,7 @@ class FlexSensorConnection:
         self.sensor_percent = [0, 0, 0, 0]
 
         # Init NN
-        self.model = SimpleNN()
+        self.model = SimpleNN(num_classes=num_classes)
         self.model.load_state_dict(
             torch.load(f"best_model_classification_{self.beam_discretization}deg.pth")
         )
