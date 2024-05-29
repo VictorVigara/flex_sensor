@@ -30,7 +30,7 @@ class flexDriver(Node):
         self.R_DIV = 82000  # Resistor
 
         self.radial_plot = True
-        self.linear_plot = True
+        self.linear_plot = False
 
         self.record_data = False
         self.record_time = 1
@@ -69,6 +69,7 @@ class flexDriver(Node):
                 self.max_sensor_range,
             ) = self.flex_conn.get_sensor_range()
             self.flex_conn.initialize_steady_values()
+            self.steady_values = False
         else:
             self.flex_conn.read_sensor_range_from_json()
             self.flex_conn.initialize_steady_values()
@@ -111,13 +112,16 @@ class flexDriver(Node):
     def timer_callback(self):
         """Main loop reading and plotting flex sensor values"""
 
+        # Analog measurements
         ADC_values = self.flex_conn.read_sensor()
+        force_direction = self.flex_conn.get_force_direction(ADC_values)
+        # self.flex_plot_analog.plot_flex_value(ADC_values, [0, 1023])
 
-        # Plots
-        self.flex_plot_analog.plot_flex_value(ADC_values, [0, 1023])
-
+        # Normalized measurements
         sensor_percent = self.flex_conn.get_sensor_percentage()
-        self.flex_plot_percent.plot_flex_value(sensor_percent, [0, 100])
+        self.flex_plot_percent.plot_flex_value(
+            sensor_percent, [0, 100], angle=force_direction
+        )
 
         if self.record_data:
             self.data_recorder.record_data(ADC_values)

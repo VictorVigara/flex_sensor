@@ -76,7 +76,29 @@ class FlexSensorPlot:
         self.init_linear_plot(title)
         self.init_radial_plot(title)
 
-    def plot_flex_value(self, value, limits=[0, 100]):
+    def plot_arrow(self, angle, length=1.0, color="r"):
+        """
+        Plot an arrow in the radial plot pointing to the center at a given angle.
+
+        args:
+            angle: The angle in degrees (0 degrees is to the right, counterclockwise)
+            length: The length of the arrow (default is 1.0)
+            color: The color of the arrow (default is 'r')
+        """
+        if self.radial_plot:
+            angle_rad = np.deg2rad(angle)  # Convert angle to radians
+            self.ax_radial.arrow(
+                angle_rad,
+                0,
+                0,
+                length,
+                head_width=0.1,
+                head_length=0.2,
+                fc=color,
+                ec=color,
+            )
+
+    def plot_flex_value(self, value, limits=[0, 100], angle=0):
         """
         Plot sensor value in the required location
 
@@ -97,6 +119,10 @@ class FlexSensorPlot:
                 width=self.width[: self.n_sensors],
                 bottom=0.0,
                 alpha=0.5,
+            )
+            angle_rad = np.deg2rad(angle)  # Convert angle to radians
+            self.ax_radial.arrow(
+                angle_rad, 0, 0, 50, head_width=0.1, head_length=0.2, fc="r", ec="r"
             )
             self.ax_radial.set_rmax(150)
             rticks = list(np.array(np.linspace(limits[0], limits[1], 10)).astype(int))

@@ -1,7 +1,12 @@
 import json
 import time
 
+import joblib
+import numpy as np
+import torch
 from pyfirmata import Arduino, util
+
+from .flex_sensor_nn import SimpleNN
 
 
 class FlexSensorConnection:
@@ -13,6 +18,8 @@ class FlexSensorConnection:
         self.port = port
         self.logger = logger
         self.sensor_locations = sensor_locations
+
+        self.beam_discretization = 15
 
         ### INITIALIZATION ###
         self.pin_list = []  # Sensor pin access list
@@ -31,6 +38,16 @@ class FlexSensorConnection:
         self.sensor_ADC = [0, 0, 0, 0]
         self.steady_values = [0, 0, 0, 0]
         self.sensor_percent = [0, 0, 0, 0]
+
+        # Init NN
+        self.model = SimpleNN()
+        self.model.load_state_dict(
+            torch.load(f"best_model_classification_{self.beam_discretization}deg.pth")
+        )
+        self.model.eval()
+        self.scaler = joblib.load(
+            f"src/flex_sensor/data/{self.beam_discretization}deg_scaler.pkl"
+        )  # Load the fitted scaler
 
     def flex_sensors_initialization(self):
         """Initialize which pins to read"""
@@ -204,3 +221,20 @@ class FlexSensorConnection:
             self.sensor_percent = [None, None, None, None]
 
         return self.sensor_percent
+
+    def get_force_direction(self, ADC_values):
+        """
+        Calculates the force direction by using a NN
+        """
+        ADC_values_array = np.array(ADC_values).reshape(1, -1)
+
+        # Normalize the data
+        ADC_data = self.scaler.transform(ADC_values_array)
+        X = torch.tensor(ADC_data, dtype=torch.float32)
+        with torch.no_grad():
+            predictions = self.model(X)
+            predicted_classes = torch.argmax(predictions, dim=1).cpu().numpy()
+            # Convert predicted classes back to angles
+            predicted_angles = predicted_classes * self.beam_discretization
+        self.logger().info(f"Force direction: {predicted_angles[0]}")
+        return predicted_angles[0]
