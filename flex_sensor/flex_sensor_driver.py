@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node
+from std_msgs.msg import Float32MultiArray, Int16
 
 from .flex_sensor_connnection import FlexSensorConnection
 from .flex_sensor_plot import FlexSensorPlot
@@ -31,7 +32,7 @@ class flexDriver(Node):
         self.VCC = 5  # Voltage at arduino 5V line
         self.R_DIV = 82000  # Resistor
 
-        self.radial_plot = True
+        self.radial_plot = False
         self.linear_plot = False
 
         self.record_data = False
@@ -109,6 +110,13 @@ class flexDriver(Node):
                 self.record_time, self.timer_period, self.logger
             )
 
+        # Publisher
+        self.flex_sensor_pub = self.create_publisher(
+            Float32MultiArray, "collision_platform/raw_values", 10
+        )
+        self.force_direction_pub = self.create_publisher(
+            Int16, "collision_platform/force_direction", 10
+        )
         # Timer
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
 
@@ -117,7 +125,17 @@ class flexDriver(Node):
 
         # Analog measurements
         ADC_values = self.flex_conn.read_sensor()
+
+        raw_values = Float32MultiArray()
+        raw_values.data = list(ADC_values)
+        self.flex_sensor_pub.publish(raw_values)
+
         force_direction = self.flex_conn.get_force_direction(ADC_values)
+
+        direction_msg = Int16()
+        direction_msg.data = int(force_direction)
+        self.force_direction_pub.publish(direction_msg)
+
         # self.flex_plot_analog.plot_flex_value(ADC_values, [0, 1023])
 
         # Normalized measurements

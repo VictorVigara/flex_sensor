@@ -93,7 +93,7 @@ class FlexSensorConnection:
                 f" Sensor {i} | ADC: {ADC_flex} / ADC_max: {self.v_max} / ADC_min: {self.v_min}"
             )
 
-            sensor_ADC.append(ADC_flex)
+            sensor_ADC.append(round(ADC_flex, 5))
         return sensor_ADC
 
     def get_sensor_range(self):
