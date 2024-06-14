@@ -1,80 +1,63 @@
-import os
-import re
-
 import joblib
 import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 import torch
 import torch.optim as optim
-from flex_sensor_nn import SensorDataset, SimpleNN, angular_distance_loss
+from NN_common_functions import load_data
+from NN_orientation_discretized import (
+    NN_orientation_discretized,
+    OrienDataset,
+    angular_distance_loss,
+)
 from sklearn.metrics import accuracy_score, mean_absolute_error
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, random_split
 
 if __name__ == "__main__":
 
-    # Define the beam discretization parameter
-    beam_discretization = 45  # Number of degrees per class, e.g., 1 degree interval
-    num_classes = int(360 / beam_discretization)  # Total number of classes
-
     # Define the folder containing the CSV files
-    data_folder_path = (
-        "/home/victor/ws_sensor_combined/src/flex_sensor/data/train_nn_28_05/"
-    )
+    data_folder_path = "/home/victor/ws_sensor_combined/src/flex_sensor/data/14-06/"
 
-    # List all CSV files in the folder
-    file_list = [f for f in os.listdir(data_folder_path) if f.endswith(".csv")]
+    # Define the beam discretization parameter
+    beam_discretization = 10  # Number of degrees per class, e.g., 1 degree interval
+    num_orien_classes = int(360 / beam_discretization)  # Total number of classes
 
-    # Initialize lists to store data and orientations
-    all_data = []
-    all_orientations = []
+    ### LOAD TRAINING DATA ###
+    all_data, all_orientations, all_positions = load_data(data_folder_path)
 
-    # Regular expression to extract orientation from filename
-    orientation_pattern = re.compile(r"orientation_(\d+)_pos")
-
-    # Loop through all files
-    for file_name in file_list:
-        # Extract the orientation from the filename
-        match = orientation_pattern.search(file_name)
-        if match:
-            orientation = int(match.group(1))
-
-            data = pd.read_csv(
-                os.path.join(data_folder_path, file_name), header=None
-            ).values
-
-            # Append the data and orientation to the lists
-            all_data.append(data)
-            all_orientations.append(np.full(data.shape[0], orientation))
-
-    # Concatenate all data arrays
-    all_data = np.vstack(all_data)
+    ### CREATE DATASET AND DATALOADER ###
 
     # Normalize the data
     scaler = StandardScaler()
     all_data = scaler.fit_transform(all_data)
 
     # Save the fitted scaler to a file
-    joblib.dump(scaler, f"src/flex_sensor/data/{beam_discretization}deg_scaler.pkl")
-
-    # Concatenate all orientation arrays
-    all_orientations = np.hstack(all_orientations)
+    joblib.dump(scaler, data_folder_path + f"{beam_discretization}deg_scaler.pkl")
 
     # Convert angles to classes based on the beam discretization
-    all_classes = (all_orientations / beam_discretization).astype(int) % num_classes
+    all_orien_classes = (all_orientations / beam_discretization).astype(
+        int
+    ) % num_orien_classes
 
     # Create dataset and split into training and validation sets
-    dataset = SensorDataset(all_data, all_classes)
+    dataset = OrienDataset(all_data, all_orien_classes)
+
     train_size = int(0.8 * len(dataset))
-    val_size = len(dataset) - train_size
-    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+    val_test_size = len(dataset) - train_size
+    train_dataset, val_test_dataset = random_split(dataset, [train_size, val_test_size])
+    val_size = int(0.5 * len(val_test_dataset))
+    test_size = len(val_test_dataset) - val_size
+    val_dataset, test_dataset = random_split(val_test_dataset, [val_size, test_size])
+
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=test_size, shuffle=True)
+
+    ### TRAINING ###
 
     # Initialize the model, loss function, and optimizer
-    model = SimpleNN(num_classes=num_classes)
+    model = NN_orientation_discretized(num_classes=num_orien_classes)
     criterion = angular_distance_loss
+
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     # Store the training and validation losses
@@ -92,7 +75,7 @@ if __name__ == "__main__":
         for inputs, labels in train_loader:
             optimizer.zero_grad()
             outputs = model(inputs)
-            loss = criterion(outputs, labels, num_classes=num_classes)
+            loss = criterion(outputs, labels, num_classes=num_orien_classes)
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
@@ -108,7 +91,7 @@ if __name__ == "__main__":
         with torch.no_grad():
             for inputs, labels in val_loader:
                 outputs = model(inputs)
-                loss = criterion(outputs, labels, num_classes=num_classes)
+                loss = criterion(outputs, labels, num_classes=num_orien_classes)
                 val_loss += loss.item()
                 val_predictions.extend(torch.argmax(outputs, dim=1).cpu().numpy())
                 val_targets.extend(labels.cpu().numpy())
@@ -124,7 +107,8 @@ if __name__ == "__main__":
             best_val_loss = avg_val_loss
             torch.save(
                 model.state_dict(),
-                f"best_model_classification_{beam_discretization}deg.pth",
+                data_folder_path
+                + f"best_model_classification_{beam_discretization}deg.pth",
             )
 
         if (epoch + 1) % 10 == 0:
@@ -134,41 +118,30 @@ if __name__ == "__main__":
 
     # Load the best model
     model.load_state_dict(
-        torch.load(f"best_model_classification_{beam_discretization}deg.pth")
+        torch.load(
+            data_folder_path + f"best_model_classification_{beam_discretization}deg.pth"
+        )
     )
 
     # Test the model
-    # Create a test dataset
-    test_data_45 = pd.read_csv(
-        "/home/victor/ws_sensor_combined/src/flex_sensor/data/250_test_nn/orientation_45_pos_3.5.csv",
-        header=None,
-    ).values
-
-    # Normalize the test data
-    test_data_45 = scaler.transform(test_data_45)
-
-    # Convert test data to tensors
-    test_X = torch.tensor(test_data_45, dtype=torch.float32)
 
     # Evaluate the model
     model.eval()
     with torch.no_grad():
-        predictions = model(test_X)
-        predicted_classes = torch.argmax(predictions, dim=1).cpu().numpy()
+        for test_X, labels in test_loader:
+            predictions = model(test_X)
+            predicted_classes = torch.argmax(predictions, dim=1).cpu().numpy()
 
     # Convert predicted classes back to angles
     predicted_angles = predicted_classes * beam_discretization
-
-    # Assuming you have the true angles for the test set
-    true_angles = np.full(
-        len(test_data_45), 250
-    )  # Replace with the actual true angles if available
-
+    true_angles = labels * beam_discretization
     # Calculate Mean Absolute Error (MAE)
     mae = mean_absolute_error(true_angles, predicted_angles)
 
     print("Predictions in degrees:")
     print(predicted_angles)
+    print("Labels in degrees: ")
+    print(true_angles)
     print(f"Mean Absolute Error (MAE): {mae:.2f} degrees")
 
     # Plot the training and validation loss

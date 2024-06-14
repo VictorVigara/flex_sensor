@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 
 
 # Define the PyTorch dataset
-class SensorDataset(Dataset):
+class OrienDataset(Dataset):
     def __init__(self, X, y):
         self.X = torch.tensor(X, dtype=torch.float32)
         self.y = torch.tensor(y, dtype=torch.long)
@@ -19,9 +19,9 @@ class SensorDataset(Dataset):
 
 
 # Define the neural network for classification
-class SimpleNN(nn.Module):
+class NN_orientation_discretized(nn.Module):
     def __init__(self, num_classes):
-        super(SimpleNN, self).__init__()
+        super(NN_orientation_discretized, self).__init__()
         self.fc1 = nn.Linear(4, 64)
         self.fc2 = nn.Linear(64, 64)
         self.fc3 = nn.Linear(

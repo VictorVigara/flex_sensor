@@ -35,7 +35,7 @@ class flexDriver(Node):
         self.linear_plot = False
 
         self.record_data = False
-        self.record_time = 1
+        self.record_time = 10
 
         self.calibration = False
 

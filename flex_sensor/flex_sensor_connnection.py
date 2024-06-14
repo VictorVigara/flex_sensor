@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from pyfirmata import Arduino, util
 
-from .flex_sensor_nn import SimpleNN
+from .NN_orientation_discretized import NN_orientation_discretized
 
 
 class FlexSensorConnection:
@@ -43,13 +43,17 @@ class FlexSensorConnection:
         self.sensor_percent = [0, 0, 0, 0]
 
         # Init NN
-        self.model = SimpleNN(num_classes=num_classes)
+        self.model = NN_orientation_discretized(num_classes=num_classes)
+        self.model_path = "/home/victor/ws_sensor_combined/src/flex_sensor/data/14-06/"
         self.model.load_state_dict(
-            torch.load(f"best_model_classification_{self.beam_discretization}deg.pth")
+            torch.load(
+                self.model_path
+                + f"best_model_classification_{self.beam_discretization}deg.pth"
+            )
         )
         self.model.eval()
         self.scaler = joblib.load(
-            f"src/flex_sensor/data/{self.beam_discretization}deg_scaler.pkl"
+            self.model_path + f"{self.beam_discretization}deg_scaler.pkl"
         )  # Load the fitted scaler
 
     def flex_sensors_initialization(self):
