@@ -18,6 +18,9 @@ setup(
     license="TODO: License declaration",
     tests_require=["pytest"],
     entry_points={
-        "console_scripts": ["flex_sensor = flex_sensor.flex_sensor_driver:main"],
+        "console_scripts": [
+            "flex_sensor = flex_sensor.flex_sensor_driver:main",
+            "collision_detector_node = flex_sensor.test_prediction_rosbag:main",
+        ],
     },
 )
