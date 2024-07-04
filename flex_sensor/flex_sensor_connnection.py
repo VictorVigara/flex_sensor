@@ -44,7 +44,7 @@ class FlexSensorConnection:
 
         # Init NN
         self.model = NN_orientation_discretized(num_classes=num_classes)
-        self.model_path = "/home/victor/ws_sensor_combined/src/flex_sensor/data/14-06/"
+        self.model_path = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/14-06/"
         self.model.load_state_dict(
             torch.load(
                 self.model_path

@@ -99,7 +99,7 @@ def load_data(data_folder_path):
 if __name__ == "__main__":
     # Define the folder containing the CSV files
     data_folder_path = (
-        "/home/victor/ws_sensor_combined/src/flex_sensor/data/17-06-4positions/"
+        "/home/blackbird/uav_forest_ws/src/flex_sensor/data/17-06-4positions/"
     )
 
     ### LOAD TRAINING DATA ###

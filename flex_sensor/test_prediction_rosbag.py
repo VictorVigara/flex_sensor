@@ -47,15 +47,15 @@ class CollisionDetectorNode(Node):
         )
 
         # Load the scaler
-        scaler_path = "/home/victor/ws_sensor_combined/src/flex_sensor/data/17-06-4positions/scaler.pkl"
+        scaler_path = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/17-06-4positions/scaler.pkl"
         self.scaler = joblib.load(scaler_path)
 
         # Load the trained model
         if self.model_type == "cnn":
-            model_path = "/home/victor/ws_sensor_combined/src/flex_sensor/data/17-06-4positions/best_model_multi_task_cnn.pth"
+            model_path = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/17-06-4positions/best_model_multi_task_cnn.pth"
             self.model = CNN_multi_task()
         else:
-            model_path = "/home/victor/ws_sensor_combined/src/flex_sensor/data/17-06-4positions/best_model_multi_task_ffnn.pth"
+            model_path = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/17-06-4positions/best_model_multi_task_ffnn.pth"
             self.model = NN_multi_task()
 
         self.model.load_state_dict(torch.load(model_path))
@@ -97,7 +97,11 @@ class CollisionDetectorNode(Node):
         else:
             contact_value = 0.0
 
+        # TODO: Current model 0 right, rest 90 to have 0 in front. 
         angle_value = angle.item() * 360.0  # Convert angle back to degrees
+        angle_value = angle_value - 90
+        if angle_value < 0: 
+            angle_value = 360+angle_value
         displacement_value = displacement.item()
 
         # Publish collision information

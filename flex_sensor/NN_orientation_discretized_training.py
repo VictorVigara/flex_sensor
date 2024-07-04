@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader, random_split
 if __name__ == "__main__":
 
     # Define the folder containing the CSV files
-    data_folder_path = "/home/victor/ws_sensor_combined/src/flex_sensor/data/14-06/"
+    data_folder_path = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/14-06/"
 
     # Define the beam discretization parameter
     beam_discretization = 10  # Number of degrees per class, e.g., 1 degree interval

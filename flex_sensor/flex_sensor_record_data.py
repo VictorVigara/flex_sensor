@@ -13,7 +13,7 @@ class FlexSensorDataRecorder:
         ]  # [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70]
         self.recording_orientations = [0, 45, 90, 135, 180, 225, 270, 315]
 
-        self.data_path = "/home/victor/ws_sensor_combined/src/flex_sensor/data/"
+        self.data_path = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/"
 
         # Initialization
         self.n_total_recordings = int(self.record_time / self.frequency)

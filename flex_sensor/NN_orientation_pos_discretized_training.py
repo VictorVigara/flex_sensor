@@ -18,7 +18,7 @@ if __name__ == "__main__":
 
     # Define the folder containing the CSV files
     data_folder_path = (
-        "/home/victor/ws_sensor_combined/src/flex_sensor/data/train_orien_pos_nn_29_05"
+        "/home/blackbird/uav_forest_ws/src/flex_sensor/data/train_orien_pos_nn_29_05"
     )
 
     # Define the beam discretization parameter
@@ -135,7 +135,7 @@ if __name__ == "__main__":
     # Test the model
     # Create a test dataset
     test_data_45 = pd.read_csv(
-        "/home/victor/ws_sensor_combined/src/flex_sensor/data/250_test_nn/orientation_45_pos_3.5.csv",
+        "/home/blackbird/uav_forest_ws/src/flex_sensor/data/250_test_nn/orientation_45_pos_3.5.csv",
         header=None,
     ).values
 
