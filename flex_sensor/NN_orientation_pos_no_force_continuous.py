@@ -94,17 +94,21 @@ def load_data(data_folder_path):
         match = orientation_pattern.search(file_name)
         if match:
             orientation = int(match.group(1))
-            position = float(match.group(2))
+            if orientation in [45, 135, 225, 315]: 
+                pass
+            else: 
+                position = float(match.group(2))
 
-            data = pd.read_csv(
-                os.path.join(data_folder_path, file_name), header=None
-            ).values
+                data = pd.read_csv(
+                    os.path.join(data_folder_path, file_name), header=None
+                ).values
 
-            # Append the data and orientation to the lists
-            all_data.append(data)
-            all_orientations.append(np.full(data.shape[0], orientation))
-            all_positions.append(np.full(data.shape[0], position))
-            force_applied.append(np.full(data.shape[0], position != 3.5))
+                # Append the data and orientation to the lists
+                all_data.append(data)
+                all_orientations.append(np.full(data.shape[0], orientation))
+                all_positions.append(np.full(data.shape[0], position))
+                force_applied.append(np.full(data.shape[0], position != 3.5))
+    print(all_orientations)
 
     # Concatenate all data arrays
     all_data = np.vstack(all_data)

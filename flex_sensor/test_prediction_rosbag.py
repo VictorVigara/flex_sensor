@@ -5,7 +5,7 @@ import torch
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 
-from .NN_orientation_pos_no_force_CNN import CNN_multi_task
+from .NN_orientation_pos_no_force_CNN import CNN_multi_task, CNN_multi_task_diverge
 
 
 # Define the fully connected neural network for multi-task learning
@@ -41,21 +41,29 @@ class CollisionDetectorNode(Node):
     def __init__(self):
         super().__init__("collision_detector_node")
 
-        self.model_type = "cnn"
+        self.model_type = "cnn_diverge"
         self.contact_threshold = (
             0.9  # Threshold from which a collision is detected [0-1]
         )
 
+        data_folder = "/home/blackbird/uav_forest_ws/src/flex_sensor/data"
+        data_date = "04-07-8pos-5disp"
+
         # Load the scaler
-        scaler_path = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/17-06-4positions/scaler.pkl"
+        scaler_path = data_folder+"/" +data_date+"/scaler.pkl"
         self.scaler = joblib.load(scaler_path)
 
         # Load the trained model
         if self.model_type == "cnn":
-            model_path = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/17-06-4positions/best_model_multi_task_cnn.pth"
+            model_path = data_folder+"/" +data_date+"/best_model_multi_task_cnn.pth"
             self.model = CNN_multi_task()
-        else:
-            model_path = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/17-06-4positions/best_model_multi_task_ffnn.pth"
+        if self.model_type == "cnn_diverge":
+            model_path = data_folder+"/" +data_date+"/best_model_multi_task_cnn_diverge.pth"
+            self.model = CNN_multi_task_diverge()
+            scaler_path = data_folder+"/" +data_date+"/scaler_diverge.pkl"
+            self.scaler = joblib.load(scaler_path)
+        elif self.model_type == "fnn":
+            model_path = data_folder+"/" +data_date+"/best_model_multi_task_ffnn.pth"
             self.model = NN_multi_task()
 
         self.model.load_state_dict(torch.load(model_path))
@@ -82,7 +90,7 @@ class CollisionDetectorNode(Node):
         # Convert to torch tensor
         input_tensor = torch.tensor(normalized_values, dtype=torch.float32)
 
-        if isinstance(self.model, CNN_multi_task):
+        if isinstance(self.model, CNN_multi_task) or isinstance(self.model, CNN_multi_task_diverge):
             input_tensor = input_tensor.reshape(-1, 1, 2, 2)  # Reshape for CNN input
 
         # Get predictions from the model

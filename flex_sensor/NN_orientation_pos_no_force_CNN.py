@@ -63,6 +63,37 @@ class CNN_multi_task(nn.Module):
         displacement = self.fc_displacement(x)
 
         return force_applied, angle, displacement
+    
+class CNN_multi_task_diverge(nn.Module):
+    def __init__(self):
+        super(CNN_multi_task_diverge, self).__init__()
+        self.conv1 = nn.Conv2d(1, 16, kernel_size=1)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=1)
+        self.fc1_shared = nn.Linear(32 * 2 * 2, 128)
+        
+        # Task-specific layers
+        self.fc_force = nn.Linear(128, 64)
+        self.fc_angle = nn.Linear(128, 64)
+        self.fc_displacement = nn.Linear(128, 64)
+        self.output_force = nn.Linear(64, 1)
+        self.output_angle = nn.Linear(64, 1)
+        self.output_displacement = nn.Linear(64, 1)
+
+    def forward(self, x):
+        x = torch.relu(self.conv1(x))
+        x = torch.relu(self.conv2(x))
+        x = x.view(x.size(0), -1)
+        x = torch.relu(self.fc1_shared(x))
+
+        force = torch.relu(self.fc_force(x))
+        angle = torch.relu(self.fc_angle(x))
+        displacement = torch.relu(self.fc_displacement(x))
+
+        force_output = torch.sigmoid(self.output_force(force))
+        angle_output = self.output_angle(angle)
+        displacement_output = self.output_displacement(displacement)
+
+        return force_output, angle_output, displacement_output
 
 
 # Custom loss function for multi-task learning
@@ -101,6 +132,9 @@ def load_data(data_folder_path):
         match = orientation_pattern.search(file_name)
         if match:
             orientation = int(match.group(1))
+            # if orientation in [45, 135, 225, 315]: 
+            #     pass
+            # else: 
             position = float(match.group(2))
 
             data = pd.read_csv(
@@ -111,7 +145,7 @@ def load_data(data_folder_path):
             all_data.append(data)
             all_orientations.append(np.full(data.shape[0], orientation))
             all_positions.append(np.full(data.shape[0], position))
-            force_applied.append(np.full(data.shape[0], position != 3.5))
+            force_applied.append(np.full(data.shape[0], position != 0.0))
 
     # Concatenate all data arrays
     all_data = np.vstack(all_data)
@@ -127,7 +161,7 @@ def load_data(data_folder_path):
 if __name__ == "__main__":
     # Define the folder containing the CSV files
     data_folder_path = (
-        "/home/blackbird/uav_forest_ws/src/flex_sensor/data/17-06-4positions/"
+        "/home/blackbird/uav_forest_ws/src/flex_sensor/data/04-07-8pos-5disp/"
     )
 
     ### LOAD TRAINING DATA ###
@@ -142,7 +176,7 @@ if __name__ == "__main__":
     all_data = scaler.fit_transform(all_data)
 
     # Save the fitted scaler to a file
-    joblib.dump(scaler, data_folder_path + "scaler.pkl")
+    joblib.dump(scaler, data_folder_path + "scaler_diverge.pkl")
 
     # Normalize angles to [0, 1] if necessary
     all_orientations = all_orientations / 360.0
@@ -150,7 +184,7 @@ if __name__ == "__main__":
     # Create dataset and split into training and validation sets
     dataset = OrienDataset(all_data, all_orientations, all_positions, force_applied)
 
-    train_size = int(0.8 * len(dataset))
+    train_size = int(0.7 * len(dataset))
     val_test_size = len(dataset) - train_size
     train_dataset, val_test_dataset = random_split(dataset, [train_size, val_test_size])
     val_size = int(0.5 * len(val_test_dataset))
@@ -164,7 +198,7 @@ if __name__ == "__main__":
     ### TRAINING ###
 
     # Initialize the model, loss function, and optimizer
-    model = CNN_multi_task()
+    model = CNN_multi_task_diverge()
     criterion = multi_task_loss
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
@@ -221,7 +255,7 @@ if __name__ == "__main__":
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             torch.save(
-                model.state_dict(), data_folder_path + "best_model_multi_task_cnn.pth"
+                model.state_dict(), data_folder_path + "best_model_multi_task_cnn_diverge.pth"
             )
 
         if (epoch + 1) % 10 == 0:
@@ -231,7 +265,7 @@ if __name__ == "__main__":
 
     # Load the best model
     model.load_state_dict(
-        torch.load(data_folder_path + "best_model_multi_task_cnn.pth")
+        torch.load(data_folder_path + "best_model_multi_task_cnn_diverge.pth")
     )
 
     # Test the model
