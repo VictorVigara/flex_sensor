@@ -36,12 +36,22 @@ class NN_multi_task(torch.nn.Module):
         return force_applied, angle, displacement
 
 
+def calculate_differences(data):
+    # Calcular diferencias entre pares de lecturas de sensores
+    diff_data = []
+    num_sensors = data.shape[1]
+    for i in range(num_sensors):
+        for j in range(i + 1, num_sensors):
+            diff_data.append(data[:, i] - data[:, j])
+    return np.array(diff_data).T
+
+
 # CollisionDetectorNode class to handle both models
 class CollisionDetectorNode(Node):
     def __init__(self):
         super().__init__("collision_detector_node")
 
-        self.model_type = "knn"  # Change to 'linear', 'CNN_FNN_continuous', 'cnn_diverge', 'fnn', or 'knn'
+        self.model_type = "CNN_FNN_continuous"  # Change to 'linear_raw', 'linear_differences', 'cnn', 'cnn_diverge', 'fnn', 'knn_raw', 'knn_differences', 'CNN_FNN_continuous'
         self.contact_threshold = (
             0.9  # Threshold from which a collision is detected [0-1]
         )
@@ -67,13 +77,18 @@ class CollisionDetectorNode(Node):
         elif self.model_type == "fnn":
             model_path = f"{model_folder}/best_model_multi_task_ffnn.pth"
             self.model = NN_multi_task()
-        elif self.model_type == "linear" or self.model_type == "knn":
+        elif self.model_type in [
+            "linear_raw",
+            "linear_differences",
+            "knn_raw",
+            "knn_differences",
+        ]:
             self.model_angle = joblib.load(f"{model_folder}/model_angle.pkl")
             self.model_disp = joblib.load(f"{model_folder}/model_disp.pkl")
             self.model_force = joblib.load(f"{model_folder}/model_force.pkl")
         else:
             raise ValueError(
-                "Unsupported model type: use 'linear', 'cnn', 'cnn_diverge', 'fnn', or 'knn'"
+                "Unsupported model type: use 'linear_raw', 'linear_differences', 'knn_raw', 'knn_differences', 'cnn', 'cnn_diverge', 'fnn', or 'CNN_FNN_continuous'"
             )
 
         if isinstance(
@@ -96,6 +111,10 @@ class CollisionDetectorNode(Node):
 
     def listener_callback(self, msg):
         raw_values = np.array(msg.data).reshape(1, -1)
+
+        # Calculate differences if required
+        if "differences" in self.model_type:
+            raw_values = calculate_differences(raw_values)
 
         # Normalize the raw values using the loaded scaler
         normalized_values = self.scaler.transform(raw_values)
@@ -141,9 +160,9 @@ class CollisionDetectorNode(Node):
             contact_value = 0.0
 
         # Adjust angle
-        angle_value = angle_value - 90
+        """ angle_value = angle_value - 90
         if angle_value < 0:
-            angle_value = 360 + angle_value
+            angle_value = 360 + angle_value """
 
         # Publish collision information
         self.collision_msg = Float32MultiArray()

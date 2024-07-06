@@ -13,7 +13,10 @@ from sklearn.metrics import accuracy_score, mean_absolute_error
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, Dataset, random_split
 
-from .result_analysis import displacement_analysis, orientation_analysis
+if __name__ == "__main__":
+    from result_analysis import displacement_analysis, orientation_analysis
+else:
+    from .result_analysis import displacement_analysis, orientation_analysis
 
 
 # Define the PyTorch dataset
@@ -163,7 +166,7 @@ def load_data(data_folder_path):
 
 if __name__ == "__main__":
     # Define the folder containing the CSV files
-    model_type = "CNN_FNN_continuous"
+    model_type = "CNN_FNN_diverge_continuous"
     data_folder_path = (
         "/home/victor/ws_sensor_combined/src/flex_sensor/data/04-07-8pos-5disp/"
     )

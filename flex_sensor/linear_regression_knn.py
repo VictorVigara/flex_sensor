@@ -49,13 +49,23 @@ def load_data(data_folder_path):
     return all_data, all_orientations, all_positions, force_applied
 
 
+def calculate_differences(data):
+    # Calcular diferencias entre pares de lecturas de sensores
+    diff_data = []
+    num_sensors = data.shape[1]
+    for i in range(num_sensors):
+        for j in range(i + 1, num_sensors):
+            diff_data.append(data[:, i] - data[:, j])
+    return np.array(diff_data).T
+
+
 if __name__ == "__main__":
     # Ruta al directorio de datos
     data_folder_path = (
         "/home/victor/ws_sensor_combined/src/flex_sensor/data/04-07-8pos-5disp/"
     )
     # Guardar el scaler para su uso futuro
-    model_type = "linear"  # Cambiar a 'linear' para usar regresión lineal
+    model_type = "knn_differences"  # Cambiar a 'linear_raw', 'linear_differences', 'knn_raw', 'knn_differences'
 
     # Definir los centros y el ancho de los bins para orientaciones
     centers_orientation = [0, 45, 90, 135, 180, 225, 270, 315]
@@ -70,6 +80,10 @@ if __name__ == "__main__":
     all_data, all_orientations, all_positions, force_applied = load_data(
         data_folder_path
     )
+
+    # Seleccionar si se usan diferencias o datos originales
+    if "differences" in model_type:
+        all_data = calculate_differences(all_data)
 
     # Normalizar los datos utilizando StandardScaler
     scaler = StandardScaler()
@@ -100,11 +114,11 @@ if __name__ == "__main__":
     )
 
     # Selección del modelo
-    if model_type == "linear":
+    if "linear" in model_type:
         model_force = LinearRegression()
         model_angle = LinearRegression()
         model_disp = LinearRegression()
-    elif model_type == "knn":
+    elif "knn" in model_type:
         model_force = KNeighborsRegressor(n_neighbors=5)
         model_angle = KNeighborsRegressor(n_neighbors=5)
         model_disp = KNeighborsRegressor(n_neighbors=5)
@@ -145,9 +159,9 @@ if __name__ == "__main__":
         y_test_angle_deg,
         y_pred_angle_deg,
         centers_orientation,
-        data_folder_path,
+        model_output_path,
         model_type,
     )
     displacement_analysis(
-        y_test_disp, y_pred_disp, centers_displacement, data_folder_path, model_type
+        y_test_disp, y_pred_disp, centers_displacement, model_output_path, model_type
     )
