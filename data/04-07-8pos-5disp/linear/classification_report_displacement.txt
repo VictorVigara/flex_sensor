@@ -17,3 +17,6 @@ Classification Report:
     accuracy                           0.75      1760
    macro avg       0.78      0.76      0.77      1760
 weighted avg       0.78      0.75      0.76      1760
+
+
+MAE displacement = 0.16030932848320062 cms

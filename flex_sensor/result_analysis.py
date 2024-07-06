@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report, confusion_matrix, mean_absolute_error
 
 
 def bin_orientations(orientations, centers, bin_width):
@@ -31,6 +31,8 @@ def orientation_analysis(
     # Crear carpeta para el modelo
     model_output_path = os.path.join(data_folder_path, model_type)
     os.makedirs(model_output_path, exist_ok=True)
+
+    angle_mae = mean_absolute_error(y_test_angle_deg, y_pred_angle_deg)
 
     bin_width_orientation = abs(centers_orientation[1] - centers_orientation[0])
 
@@ -66,6 +68,8 @@ def orientation_analysis(
     print("Classification Report for Orientation Prediction:")
     print(class_report_angle)
 
+    print(f"MAE angle = {angle_mae} deg")
+
     # Guardar el informe de clasificación para orientaciones en un archivo
     with open(
         os.path.join(model_output_path, "classification_report_orientation.txt"), "w"
@@ -74,6 +78,7 @@ def orientation_analysis(
         f.write(np.array2string(conf_matrix_angle))
         f.write("\n\nClassification Report:\n")
         f.write(class_report_angle)
+        f.write(f"\n\nMAE angle = {angle_mae} deg")
 
     # Graficar la matriz de confusión para orientaciones
     plt.figure(figsize=(10, 7))
@@ -132,6 +137,8 @@ def displacement_analysis(
     model_output_path = os.path.join(data_folder_path, model_type)
     os.makedirs(model_output_path, exist_ok=True)
 
+    disp_mae = mean_absolute_error(y_test_disp, y_pred_disp)
+
     bin_width_displacement = abs(centers_displacement[1] - centers_displacement[0])
 
     # Binarizar los desplazamientos
@@ -166,6 +173,8 @@ def displacement_analysis(
     print("Classification Report for Displacement Prediction:")
     print(class_report_disp)
 
+    print(f"MAE displacement = {disp_mae} cm")
+
     # Guardar el informe de clasificación para desplazamientos en un archivo
     with open(
         os.path.join(model_output_path, "classification_report_displacement.txt"), "w"
@@ -174,6 +183,7 @@ def displacement_analysis(
         f.write(np.array2string(conf_matrix_disp))
         f.write("\n\nClassification Report:\n")
         f.write(class_report_disp)
+        f.write(f"\n\nMAE displacement = {disp_mae} cms")
 
     # Graficar la matriz de confusión para desplazamientos
     plt.figure(figsize=(10, 7))

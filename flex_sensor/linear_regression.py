@@ -57,6 +57,12 @@ if __name__ == "__main__":
     # Guardar el scaler para su uso futuro
     model_type = "linear"  # Cambiar a 'linear' para usar regresión lineal
 
+    # Definir los centros y el ancho de los bins para orientaciones
+    centers_orientation = [0, 45, 90, 135, 180, 225, 270, 315]
+
+    # Definir los centros y el ancho de los bins para desplazamientos
+    centers_displacement = [0.5, 1, 1.5, 2, 2.5]
+
     model_output_path = os.path.join(data_folder_path, model_type)
     os.makedirs(model_output_path, exist_ok=True)
 
@@ -134,12 +140,6 @@ if __name__ == "__main__":
     # Convertir las orientaciones a grados
     y_test_angle_deg = y_test_angle * 360.0
     y_pred_angle_deg = y_pred_angle * 360.0
-
-    # Definir los centros y el ancho de los bins para orientaciones
-    centers_orientation = [0, 45, 90, 135, 180, 225, 270, 315]
-
-    # Definir los centros y el ancho de los bins para desplazamientos
-    centers_displacement = [0.5, 1, 1.5, 2, 2.5]
 
     orientation_analysis(
         y_test_angle_deg,

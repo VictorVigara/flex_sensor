@@ -41,33 +41,46 @@ class CollisionDetectorNode(Node):
     def __init__(self):
         super().__init__("collision_detector_node")
 
-        self.model_type = "cnn_diverge"
+        self.model_type = "knn"  # Change to 'linear', 'CNN_FNN_continuous', 'cnn_diverge', 'fnn', or 'knn'
         self.contact_threshold = (
             0.9  # Threshold from which a collision is detected [0-1]
         )
 
-        data_folder = "/home/blackbird/uav_forest_ws/src/flex_sensor/data"
+        data_folder = "/home/victor/ws_sensor_combined/src/flex_sensor/data"
         data_date = "04-07-8pos-5disp"
 
+        model_folder = f"{data_folder}/{data_date}/{self.model_type}"
+
         # Load the scaler
-        scaler_path = data_folder+"/" +data_date+"/scaler.pkl"
+        scaler_path = f"{model_folder}/scaler.pkl"
         self.scaler = joblib.load(scaler_path)
 
-        # Load the trained model
-        if self.model_type == "cnn":
-            model_path = data_folder+"/" +data_date+"/best_model_multi_task_cnn.pth"
-            self.model = CNN_multi_task()
-        if self.model_type == "cnn_diverge":
-            model_path = data_folder+"/" +data_date+"/best_model_multi_task_cnn_diverge.pth"
-            self.model = CNN_multi_task_diverge()
-            scaler_path = data_folder+"/" +data_date+"/scaler_diverge.pkl"
-            self.scaler = joblib.load(scaler_path)
-        elif self.model_type == "fnn":
-            model_path = data_folder+"/" +data_date+"/best_model_multi_task_ffnn.pth"
-            self.model = NN_multi_task()
+        self.model = None
 
-        self.model.load_state_dict(torch.load(model_path))
-        self.model.eval()
+        # Load the trained model
+        if self.model_type == "CNN_FNN_continuous":
+            model_path = f"{model_folder}/model.pth"
+            self.model = CNN_multi_task()
+        elif self.model_type == "cnn_diverge":
+            model_path = f"{model_folder}/best_model_multi_task_cnn_diverge.pth"
+            self.model = CNN_multi_task_diverge()
+        elif self.model_type == "fnn":
+            model_path = f"{model_folder}/best_model_multi_task_ffnn.pth"
+            self.model = NN_multi_task()
+        elif self.model_type == "linear" or self.model_type == "knn":
+            self.model_angle = joblib.load(f"{model_folder}/model_angle.pkl")
+            self.model_disp = joblib.load(f"{model_folder}/model_disp.pkl")
+            self.model_force = joblib.load(f"{model_folder}/model_force.pkl")
+        else:
+            raise ValueError(
+                "Unsupported model type: use 'linear', 'cnn', 'cnn_diverge', 'fnn', or 'knn'"
+            )
+
+        if isinstance(
+            self.model, (CNN_multi_task, CNN_multi_task_diverge, NN_multi_task)
+        ):
+            self.model.load_state_dict(torch.load(model_path))
+            self.model.eval()
 
         # Initialize ROS2 subscribers and publishers
         self.subscription = self.create_subscription(
@@ -87,30 +100,50 @@ class CollisionDetectorNode(Node):
         # Normalize the raw values using the loaded scaler
         normalized_values = self.scaler.transform(raw_values)
 
-        # Convert to torch tensor
-        input_tensor = torch.tensor(normalized_values, dtype=torch.float32)
+        # Convert to torch tensor if needed
+        if isinstance(
+            self.model, (CNN_multi_task, CNN_multi_task_diverge, NN_multi_task)
+        ):
+            input_tensor = torch.tensor(normalized_values, dtype=torch.float32)
 
-        if isinstance(self.model, CNN_multi_task) or isinstance(self.model, CNN_multi_task_diverge):
-            input_tensor = input_tensor.reshape(-1, 1, 2, 2)  # Reshape for CNN input
+            if isinstance(self.model, (CNN_multi_task, CNN_multi_task_diverge)):
+                input_tensor = input_tensor.reshape(
+                    -1, 1, 2, 2
+                )  # Reshape for CNN input
 
-        # Get predictions from the model
-        with torch.no_grad():
-            force_applied, angle, displacement = self.model(input_tensor)
+            # Get predictions from the model
+            with torch.no_grad():
+                force_applied, angle, displacement = self.model(input_tensor)
 
-        # Process the predictions
-        contact = force_applied.item() > self.contact_threshold
-        print(force_applied.item())
+            # Process the predictions
+            contact = force_applied.item() > self.contact_threshold
+            angle_value = angle.item() * 360.0  # Convert angle back to degrees
+            displacement_value = displacement.item()
+        else:
+            # Get predictions from sklearn model
+            force_applied = self.model_force.predict(normalized_values)
+            angle_value = self.model_angle.predict(normalized_values)
+            displacement_value = self.model_disp.predict(normalized_values)
+
+            contact = force_applied[0] > self.contact_threshold
+            angle_value = angle_value[0] * 360.0  # Convert angle back to degrees
+            displacement_value = displacement_value[0]
+
+        print(
+            force_applied
+            if isinstance(force_applied, torch.Tensor)
+            else force_applied[0]
+        )
+
         if contact:
             contact_value = 1.0
         else:
             contact_value = 0.0
 
-        # TODO: Current model 0 right, rest 90 to have 0 in front. 
-        angle_value = angle.item() * 360.0  # Convert angle back to degrees
+        # Adjust angle
         angle_value = angle_value - 90
-        if angle_value < 0: 
-            angle_value = 360+angle_value
-        displacement_value = displacement.item()
+        if angle_value < 0:
+            angle_value = 360 + angle_value
 
         # Publish collision information
         self.collision_msg = Float32MultiArray()

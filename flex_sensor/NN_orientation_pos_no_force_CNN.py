@@ -13,6 +13,8 @@ from sklearn.metrics import accuracy_score, mean_absolute_error
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, Dataset, random_split
 
+from .result_analysis import displacement_analysis, orientation_analysis
+
 
 # Define the PyTorch dataset
 class OrienDataset(Dataset):
@@ -63,14 +65,15 @@ class CNN_multi_task(nn.Module):
         displacement = self.fc_displacement(x)
 
         return force_applied, angle, displacement
-    
+
+
 class CNN_multi_task_diverge(nn.Module):
     def __init__(self):
         super(CNN_multi_task_diverge, self).__init__()
         self.conv1 = nn.Conv2d(1, 16, kernel_size=1)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=1)
         self.fc1_shared = nn.Linear(32 * 2 * 2, 128)
-        
+
         # Task-specific layers
         self.fc_force = nn.Linear(128, 64)
         self.fc_angle = nn.Linear(128, 64)
@@ -132,9 +135,9 @@ def load_data(data_folder_path):
         match = orientation_pattern.search(file_name)
         if match:
             orientation = int(match.group(1))
-            # if orientation in [45, 135, 225, 315]: 
+            # if orientation in [45, 135, 225, 315]:
             #     pass
-            # else: 
+            # else:
             position = float(match.group(2))
 
             data = pd.read_csv(
@@ -160,9 +163,15 @@ def load_data(data_folder_path):
 
 if __name__ == "__main__":
     # Define the folder containing the CSV files
+    model_type = "CNN_FNN_continuous"
     data_folder_path = (
-        "/home/blackbird/uav_forest_ws/src/flex_sensor/data/04-07-8pos-5disp/"
+        "/home/victor/ws_sensor_combined/src/flex_sensor/data/04-07-8pos-5disp/"
     )
+    center_orientations = [0, 45, 90, 135, 180, 225, 270, 315]
+    center_displacements = [0.5, 1.0, 1.5, 2.0, 2.5]
+
+    model_output_path = os.path.join(data_folder_path, model_type)
+    os.makedirs(model_output_path, exist_ok=True)
 
     ### LOAD TRAINING DATA ###
     all_data, all_orientations, all_positions, force_applied = load_data(
@@ -176,7 +185,7 @@ if __name__ == "__main__":
     all_data = scaler.fit_transform(all_data)
 
     # Save the fitted scaler to a file
-    joblib.dump(scaler, data_folder_path + "scaler_diverge.pkl")
+    joblib.dump(scaler, model_output_path + "/scaler.pkl")
 
     # Normalize angles to [0, 1] if necessary
     all_orientations = all_orientations / 360.0
@@ -198,7 +207,10 @@ if __name__ == "__main__":
     ### TRAINING ###
 
     # Initialize the model, loss function, and optimizer
-    model = CNN_multi_task_diverge()
+    if model_type == "CNN_FNN_continuous":
+        model = CNN_multi_task()
+    elif model_type == "CNN_FNN_diverge_continuous":
+        model = CNN_multi_task_diverge()
     criterion = multi_task_loss
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
@@ -210,7 +222,7 @@ if __name__ == "__main__":
     best_val_loss = float("inf")
 
     # Train the model
-    num_epochs = 200
+    num_epochs = 100
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0
@@ -254,9 +266,7 @@ if __name__ == "__main__":
         # Save the model if validation loss is the best we've seen so far
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            torch.save(
-                model.state_dict(), data_folder_path + "best_model_multi_task_cnn_diverge.pth"
-            )
+            torch.save(model.state_dict(), model_output_path + f"/model.pth")
 
         if (epoch + 1) % 10 == 0:
             print(
@@ -264,9 +274,7 @@ if __name__ == "__main__":
             )
 
     # Load the best model
-    model.load_state_dict(
-        torch.load(data_folder_path + "best_model_multi_task_cnn_diverge.pth")
-    )
+    model.load_state_dict(torch.load(model_output_path + "/model.pth"))
 
     # Test the model
     model.eval()
@@ -293,23 +301,20 @@ if __name__ == "__main__":
         )
         force_accuracy = accuracy_score(true_force, predicted_force)
 
-        print("Predicted Forces:")
-        print(predicted_force)
-        print("True Forces:")
-        print(true_force)
         print(f"Force Detection Accuracy: {force_accuracy:.2f}")
-
-        print("Predicted Angles in degrees:")
-        print(predicted_angles)
-        print("True Angles in degrees:")
-        print(true_angles)
         print(f"Angle MAE: {angle_mae:.2f} degrees")
+        print(f"Displacement MAE: {displacement_mae:.2f} cm")
 
-        print("Predicted Displacements:")
-        print(predicted_displacements)
-        print("True Displacements:")
-        print(true_displacements)
-        print(f"Displacement MAE: {displacement_mae:.2f} units")
+    orientation_analysis(
+        true_angles, predicted_angles, center_orientations, data_folder_path, model_type
+    )
+    displacement_analysis(
+        true_displacements,
+        predicted_displacements,
+        center_displacements,
+        data_folder_path,
+        model_type,
+    )
 
     # Plot the training and validation loss
     plt.figure(figsize=(10, 6))
