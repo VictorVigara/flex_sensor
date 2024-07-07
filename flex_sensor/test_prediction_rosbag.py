@@ -37,7 +37,7 @@ class CollisionDetectorNode(Node):
         super().__init__("collision_detector_node")
 
         self.model_type = (
-            "CNN_FNN_Raw_Diff"  # 'FFNNRaw', 'linear_raw', 'linear_differences',
+            "FFNN_CNN_raw"  # 'FFNNRaw', 'linear_raw', 'linear_differences',
         )
         # 'knn_raw', 'knn_differences', 'FFNN_CNN_raw',
         # 'FFNNRawDiff',
