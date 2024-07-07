@@ -17,7 +17,7 @@ def multi_task_loss(
     displacement_targets,
 ):
     force_loss = F.binary_cross_entropy(force_preds, force_targets)
-    angle_loss = continuous_angular_distance_loss(angle_preds, angle_targets)
+    angle_loss = F.mse_loss(angle_preds, angle_targets)
     displacement_loss = F.mse_loss(displacement_preds, displacement_targets)
 
     return force_loss + angle_loss + displacement_loss

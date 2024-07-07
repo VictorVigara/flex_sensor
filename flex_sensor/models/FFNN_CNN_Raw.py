@@ -71,9 +71,9 @@ if __name__ == "__main__":
     # Define the folder containing the CSV files
     model_type = "FFNN_CNN_raw"
     data_folder_path = (
-        "/home/victor/ws_sensor_combined/src/flex_sensor/data/04-07-8pos-5disp/"
+        "/home/victor/ws_sensor_combined/src/flex_sensor/data/17-06-4positions/"
     )
-    center_orientations = [0, 45, 90, 135, 180, 225, 270, 315]
+    center_orientations = [0, 90, 180, 270]
     center_displacements = [0.5, 1.0, 1.5, 2.0, 2.5]
 
     model_output_path = os.path.join(data_folder_path, model_type)
@@ -127,7 +127,7 @@ if __name__ == "__main__":
     best_val_loss = float("inf")
 
     # Train the model
-    num_epochs = 30
+    num_epochs = 200
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0

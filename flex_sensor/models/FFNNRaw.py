@@ -2,11 +2,11 @@ import os
 
 import joblib
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.metrics import accuracy_score, mean_absolute_error
-from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, Dataset, random_split
 
 if __name__ == "__main__":
@@ -15,6 +15,19 @@ if __name__ == "__main__":
 else:
     from .common import load_data, multi_task_loss
     from .result_analysis import displacement_analysis, orientation_analysis
+
+
+# Function to normalize data
+def normalize_data(data, min_values=None, max_values=None):
+    normalized_data = np.zeros_like(data)
+    if min_values is None or max_values is None:
+        min_values = np.min(data, axis=0)
+        max_values = np.max(data, axis=0)
+    for i in range(data.shape[1]):
+        normalized_data[:, i] = (data[:, i] - min_values[i]) / (
+            max_values[i] - min_values[i]
+        )
+    return normalized_data, min_values, max_values
 
 
 # Define the PyTorch dataset
@@ -60,7 +73,7 @@ if __name__ == "__main__":
     model_type = "FFNNRaw"
     # Define the folder containing the CSV files
     data_folder_path = (
-        "/home/victor/ws_sensor_combined/src/flex_sensor/data/04-07-8pos-5disp/"
+        "/home/victor/ws_sensor_combined/src/flex_sensor/data/17-06-4positions/"
     )
     center_orientations = [0, 45, 90, 135, 180, 225, 270, 315]
     center_displacements = [0.5, 1.0, 1.5, 2.0, 2.5]
@@ -71,16 +84,17 @@ if __name__ == "__main__":
     ### LOAD TRAINING DATA ###
     all_data, all_orientations, all_positions, all_contact = load_data(data_folder_path)
 
-    ### CREATE DATASET AND DATALOADER ###
+    ### NORMALIZE DATA ###
+    all_data, min_values, max_values = normalize_data(all_data)
 
-    # Normalize the data
-    scaler = StandardScaler()
-    all_data = scaler.fit_transform(all_data)
+    # Save the min and max values
+    normalization_params = {"min_values": min_values, "max_values": max_values}
+    joblib.dump(
+        normalization_params,
+        os.path.join(model_output_path, "normalization_params.pkl"),
+    )
 
-    # Save the fitted scaler to a file
-    joblib.dump(scaler, model_output_path + "/scaler.pkl")
-
-    # Normalize angles to [0, 1] if necessary
+    # Normalize angles to [0, 1]
     all_orientations = all_orientations / 360.0
 
     # Create dataset and split into training and validation sets

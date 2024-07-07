@@ -42,9 +42,9 @@ class FFNNRawDataset(Dataset):
 
 
 # Define the neural network for continuous output
-class FFNNRaw(nn.Module):
+class FNNRaw_sincos(nn.Module):
     def __init__(self):
-        super(FFNNRaw, self).__init__()
+        super(FNNRaw_sincos, self).__init__()
         self.fc1 = nn.Linear(4, 64)
         self.fc2 = nn.Linear(64, 64)
         self.fc_force = nn.Linear(64, 1)
@@ -132,7 +132,7 @@ if __name__ == "__main__":
     ### TRAINING ###
 
     # Initialize the model, loss function, and optimizer
-    model = FFNNRaw()
+    model = FNNRaw_sincos()
     criterion = multi_task_loss
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
