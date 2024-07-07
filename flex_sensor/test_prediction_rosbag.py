@@ -5,35 +5,10 @@ import torch
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 
-from .NN_orientation_pos_no_force_CNN import CNN_multi_task, CNN_multi_task_diverge
-
-
-# Define the fully connected neural network for multi-task learning
-class NN_multi_task(torch.nn.Module):
-    def __init__(self):
-        super(NN_multi_task, self).__init__()
-        self.fc1 = torch.nn.Linear(4, 64)
-        self.fc2 = torch.nn.Linear(64, 64)
-        self.fc3 = torch.nn.Linear(64, 64)
-
-        self.fc_force = torch.nn.Linear(
-            64, 1
-        )  # Binary classification for force applied
-        self.fc_angle = torch.nn.Linear(64, 1)  # Continuous output for angle
-        self.fc_displacement = torch.nn.Linear(
-            64, 1
-        )  # Continuous output for displacement
-
-    def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = torch.relu(self.fc3(x))
-
-        force_applied = torch.sigmoid(self.fc_force(x))
-        angle = self.fc_angle(x)
-        displacement = self.fc_displacement(x)
-
-        return force_applied, angle, displacement
+from .models.FFNN_CNN_Raw import CNN_multi_task
+from .models.FFNN_Raw_Diff import FFNNRawDiff
+from .models.FFNN_raw_sincon import FNNRaw_sincos
+from .models.FFNNRaw import FFNNRaw
 
 
 def calculate_differences(data):
@@ -51,7 +26,12 @@ class CollisionDetectorNode(Node):
     def __init__(self):
         super().__init__("collision_detector_node")
 
-        self.model_type = "CNN_FNN_continuous"  # Change to 'linear_raw', 'linear_differences', 'cnn', 'cnn_diverge', 'fnn', 'knn_raw', 'knn_differences', 'CNN_FNN_continuous'
+        self.model_type = (
+            "FFNNRaw_sincos"  # 'FFNNRaw', 'linear_raw', 'linear_differences',
+        )
+        # 'knn_raw', 'knn_differences', 'FFNN_CNN_raw',
+        # 'FFNNRawDiff',
+
         self.contact_threshold = (
             0.9  # Threshold from which a collision is detected [0-1]
         )
@@ -59,24 +39,30 @@ class CollisionDetectorNode(Node):
         data_folder = "/home/victor/ws_sensor_combined/src/flex_sensor/data"
         data_date = "04-07-8pos-5disp"
 
+        self.NN_models = (CNN_multi_task, FFNNRaw, FFNNRawDiff, FNNRaw_sincos)
+
         model_folder = f"{data_folder}/{data_date}/{self.model_type}"
 
-        # Load the scaler
-        scaler_path = f"{model_folder}/scaler.pkl"
-        self.scaler = joblib.load(scaler_path)
+        self.raw_scaler = None
+        self.diff_scaler = None
 
         self.model = None
 
         # Load the trained model
-        if self.model_type == "CNN_FNN_continuous":
+        if self.model_type == "FFNN_CNN_raw":
             model_path = f"{model_folder}/model.pth"
             self.model = CNN_multi_task()
-        elif self.model_type == "cnn_diverge":
-            model_path = f"{model_folder}/best_model_multi_task_cnn_diverge.pth"
-            self.model = CNN_multi_task_diverge()
-        elif self.model_type == "fnn":
-            model_path = f"{model_folder}/best_model_multi_task_ffnn.pth"
-            self.model = NN_multi_task()
+        elif self.model_type == "FFNNRaw":
+            model_path = f"{model_folder}/model.pth"
+            self.model = FFNNRaw()
+        elif self.model_type == "FFNNRaw_sincos":
+            model_path = f"{model_folder}/model.pth"
+            self.model = FNNRaw_sincos()
+        elif self.model_type == "FFNNRawDiff":
+            model_path = f"{model_folder}/model.pth"
+            self.model = FFNNRawDiff()
+            self.raw_scaler = joblib.load(f"{model_folder}/scaler_raw.pkl")
+            self.diff_scaler = joblib.load(f"{model_folder}/scaler_diff.pkl")
         elif self.model_type in [
             "linear_raw",
             "linear_differences",
@@ -91,9 +77,12 @@ class CollisionDetectorNode(Node):
                 "Unsupported model type: use 'linear_raw', 'linear_differences', 'knn_raw', 'knn_differences', 'cnn', 'cnn_diverge', 'fnn', or 'CNN_FNN_continuous'"
             )
 
-        if isinstance(
-            self.model, (CNN_multi_task, CNN_multi_task_diverge, NN_multi_task)
-        ):
+        if self.raw_scaler is None and self.diff_scaler is None:
+            # Load the scaler
+            scaler_path = f"{model_folder}/scaler.pkl"
+            self.scaler = joblib.load(scaler_path)
+
+        if isinstance(self.model, self.NN_models):
             self.model.load_state_dict(torch.load(model_path))
             self.model.eval()
 
@@ -113,36 +102,88 @@ class CollisionDetectorNode(Node):
         raw_values = np.array(msg.data).reshape(1, -1)
 
         # Calculate differences if required
-        if "differences" in self.model_type:
-            raw_values = calculate_differences(raw_values)
-
-        # Normalize the raw values using the loaded scaler
-        normalized_values = self.scaler.transform(raw_values)
+        if self.raw_scaler and self.diff_scaler:
+            diff_values = calculate_differences(raw_values)
+            diff_normalized_values = self.diff_scaler.transform(diff_values)
+            raw_normalized_values = self.raw_scaler.transform(raw_values)
+        else:
+            # Normalize the raw values using the loaded scaler
+            raw_normalized_values = self.scaler.transform(raw_values)
 
         # Convert to torch tensor if needed
-        if isinstance(
-            self.model, (CNN_multi_task, CNN_multi_task_diverge, NN_multi_task)
+        if (
+            isinstance(self.model, self.NN_models)
+            and not self.raw_scaler
+            and not self.diff_scaler
         ):
-            input_tensor = torch.tensor(normalized_values, dtype=torch.float32)
+            input_tensor = torch.tensor(raw_normalized_values, dtype=torch.float32)
 
-            if isinstance(self.model, (CNN_multi_task, CNN_multi_task_diverge)):
+            if "CNN" in self.model_type:
                 input_tensor = input_tensor.reshape(
                     -1, 1, 2, 2
                 )  # Reshape for CNN input
 
+            if "sincos" in self.model_type:
+                print("sincos")
+                with torch.no_grad():
+                    (
+                        force_applied,
+                        angle_sin_preds,
+                        angle_cos_preds,
+                        displacement,
+                    ) = self.model(input_tensor)
+
+                # Process the predictions
+                contact = force_applied.item() > self.contact_threshold
+                angle_value = float(
+                    torch.atan2(angle_sin_preds, angle_cos_preds) * 180 / np.pi
+                )
+                if angle_value < 0:
+                    angle_value = angle_value + 360
+                displacement_value = displacement.item()
+            else:
+                # Get predictions from the model
+                with torch.no_grad():
+                    force_applied, angle, displacement = self.model(input_tensor)
+
+                # Process the predictions
+                contact = force_applied.item() > self.contact_threshold
+                angle_value = angle.item() * 360.0  # Convert angle back to degrees
+                if angle_value < 0:
+                    angle_value = angle_value + 360
+                displacement_value = displacement.item()
+
+        elif (
+            isinstance(self.model, self.NN_models)
+            and self.raw_scaler
+            and self.diff_scaler
+        ):
+            raw_input_tensor = torch.tensor(raw_normalized_values, dtype=torch.float32)
+            diff_input_tensor = torch.tensor(
+                diff_normalized_values, dtype=torch.float32
+            )
+
             # Get predictions from the model
             with torch.no_grad():
-                force_applied, angle, displacement = self.model(input_tensor)
+                force_applied, angle, displacement = self.model(
+                    raw_input_tensor, diff_input_tensor
+                )
 
             # Process the predictions
             contact = force_applied.item() > self.contact_threshold
             angle_value = angle.item() * 360.0  # Convert angle back to degrees
+            print(f"original output: {angle_value}")
+
+            if angle_value < 0:
+                angle_value = angle_value + 360
+            print(f"Corrected angle: {angle_value}")
             displacement_value = displacement.item()
+
         else:
             # Get predictions from sklearn model
-            force_applied = self.model_force.predict(normalized_values)
-            angle_value = self.model_angle.predict(normalized_values)
-            displacement_value = self.model_disp.predict(normalized_values)
+            force_applied = self.model_force.predict(raw_normalized_values)
+            angle_value = self.model_angle.predict(raw_normalized_values)
+            displacement_value = self.model_disp.predict(raw_normalized_values)
 
             contact = force_applied[0] > self.contact_threshold
             angle_value = angle_value[0] * 360.0  # Convert angle back to degrees

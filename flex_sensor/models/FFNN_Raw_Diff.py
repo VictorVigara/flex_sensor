@@ -1,0 +1,267 @@
+import os
+
+import joblib
+import matplotlib.pyplot as plt
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from sklearn.metrics import accuracy_score, mean_absolute_error
+from sklearn.preprocessing import StandardScaler
+from torch.utils.data import DataLoader, Dataset, random_split
+
+if __name__ == "__main__":
+    from common import calculate_differences, load_data, multi_task_loss
+    from result_analysis import displacement_analysis, orientation_analysis
+else:
+    from .common import calculate_differences, load_data, multi_task_loss
+    from .result_analysis import displacement_analysis, orientation_analysis
+
+
+# Define the PyTorch dataset
+class FFNNRawDiffDataset(Dataset):
+    def __init__(self, raw_values, diff_values, angles, displacements, contact):
+        self.raw_values = torch.tensor(raw_values, dtype=torch.float32)
+        self.diff_values = torch.tensor(diff_values, dtype=torch.float32)
+        self.angles = torch.tensor(angles, dtype=torch.float32)
+        self.displacements = torch.tensor(displacements, dtype=torch.float32)
+        self.contact = torch.tensor(contact, dtype=torch.float32)
+
+    def __len__(self):
+        return len(self.raw_values)
+
+    def __getitem__(self, idx):
+        return (
+            self.raw_values[idx],
+            self.diff_values[idx],
+            self.angles[idx],
+            self.displacements[idx],
+            self.contact[idx],
+        )
+
+
+# Define the neural network for continuous output
+class FFNNRawDiff(nn.Module):
+    def __init__(self):
+        super(FFNNRawDiff, self).__init__()
+        # FFNN for raw values
+        self.fc1_raw = nn.Linear(4, 64)
+        self.fc2_raw = nn.Linear(64, 64)
+
+        # FFNN for sensor differences
+        self.fc1_diff = nn.Linear(6, 64)
+        self.fc2_diff = nn.Linear(64, 64)
+
+        # Combined FFNN
+        self.fc_combined = nn.Linear(128, 64)
+        self.fc_force = nn.Linear(64, 1)
+        self.fc_angle = nn.Linear(64, 1)
+        self.fc_displacement = nn.Linear(64, 1)
+
+    def forward(self, raw_values, diff_values):
+        # Forward pass for raw values
+        x_raw = torch.relu(self.fc1_raw(raw_values))
+        x_raw = torch.relu(self.fc2_raw(x_raw))
+
+        # Forward pass for sensor differences
+        x_diff = torch.relu(self.fc1_diff(diff_values))
+        x_diff = torch.relu(self.fc2_diff(x_diff))
+
+        # Concatenate the outputs
+        x = torch.cat((x_raw, x_diff), dim=1)
+
+        # Forward pass for combined network
+        x = torch.relu(self.fc_combined(x))
+        force_applied = torch.sigmoid(self.fc_force(x))
+        angle = self.fc_angle(x)
+        displacement = self.fc_displacement(x)
+        return force_applied, angle, displacement
+
+
+if __name__ == "__main__":
+    model_type = "FFNNRawDiff"
+    # Define the folder containing the CSV files
+    data_folder_path = (
+        "/home/victor/ws_sensor_combined/src/flex_sensor/data/04-07-8pos-5disp/"
+    )
+    center_orientations = [0, 45, 90, 135, 180, 225, 270, 315]
+    center_displacements = [0.5, 1.0, 1.5, 2.0, 2.5]
+
+    model_output_path = os.path.join(data_folder_path, model_type)
+    os.makedirs(model_output_path, exist_ok=True)
+
+    ### LOAD TRAINING DATA ###
+    all_data, all_orientations, all_positions, all_contact = load_data(data_folder_path)
+
+    # Calculate differences between sensors
+    sensor_differences = calculate_differences(all_data)
+
+    ### CREATE DATASET AND DATALOADER ###
+
+    # Normalize the data
+    scaler_raw = StandardScaler()
+    all_data = scaler_raw.fit_transform(all_data)
+
+    scaler_diff = StandardScaler()
+    sensor_differences = scaler_diff.fit_transform(sensor_differences)
+
+    # Save the fitted scalers to files
+    joblib.dump(scaler_raw, model_output_path + "/scaler_raw.pkl")
+    joblib.dump(scaler_diff, model_output_path + "/scaler_diff.pkl")
+
+    # Normalize angles to [0, 1] if necessary
+    all_orientations = all_orientations / 360.0
+
+    # Create dataset and split into training and validation sets
+    dataset = FFNNRawDiffDataset(
+        all_data, sensor_differences, all_orientations, all_positions, all_contact
+    )
+
+    train_size = int(0.8 * len(dataset))
+    val_test_size = len(dataset) - train_size
+    train_dataset, val_test_dataset = random_split(dataset, [train_size, val_test_size])
+    val_size = int(0.5 * len(val_test_dataset))
+    test_size = len(val_test_dataset) - val_size
+    val_dataset, test_dataset = random_split(val_test_dataset, [val_size, test_size])
+
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=test_size, shuffle=True)
+
+    ### TRAINING ###
+
+    # Initialize the model, loss function, and optimizer
+    model = FFNNRawDiff()
+    criterion = multi_task_loss
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+    # Store the training and validation losses
+    training_losses = []
+    validation_losses = []
+
+    # Track the best validation loss
+    best_val_loss = float("inf")
+
+    # Train the model
+    num_epochs = 50
+    for epoch in range(num_epochs):
+        model.train()
+        epoch_loss = 0
+        for (
+            raw_inputs,
+            diff_inputs,
+            angle_labels,
+            displacement_labels,
+            force_labels,
+        ) in train_loader:
+            optimizer.zero_grad()
+            force_preds, angle_preds, displacement_preds = model(
+                raw_inputs, diff_inputs
+            )
+            loss = criterion(
+                force_preds.squeeze(),
+                force_labels,
+                angle_preds.squeeze(),
+                angle_labels,
+                displacement_preds.squeeze(),
+                displacement_labels,
+            )
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss.item()
+
+        avg_epoch_loss = epoch_loss / len(train_loader)
+        training_losses.append(avg_epoch_loss)
+
+        # Evaluate on validation set
+        model.eval()
+        val_loss = 0
+        with torch.no_grad():
+            for (
+                raw_inputs,
+                diff_inputs,
+                angle_labels,
+                displacement_labels,
+                force_labels,
+            ) in val_loader:
+                force_preds, angle_preds, displacement_preds = model(
+                    raw_inputs, diff_inputs
+                )
+                loss = criterion(
+                    force_preds.squeeze(),
+                    force_labels,
+                    angle_preds.squeeze(),
+                    angle_labels,
+                    displacement_preds.squeeze(),
+                    displacement_labels,
+                )
+                val_loss += loss.item()
+
+        avg_val_loss = val_loss / len(val_loader)
+        validation_losses.append(avg_val_loss)
+
+        # Save the model if validation loss is the best we've seen so far
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            torch.save(model.state_dict(), model_output_path + f"/model.pth")
+
+        if (epoch + 1) % 10 == 0:
+            print(
+                f"Epoch [{epoch + 1}/{num_epochs}], Training Loss: {avg_epoch_loss:.4f}, Validation Loss: {avg_val_loss:.4f}"
+            )
+
+    # Load the best model
+    model.load_state_dict(torch.load(model_output_path + "/model.pth"))
+
+    # Test the model
+    model.eval()
+    with torch.no_grad():
+        (
+            test_raw_inputs,
+            test_diff_inputs,
+            test_angle_labels,
+            test_displacement_labels,
+            test_force_labels,
+        ) = next(iter(test_loader))
+        test_force_preds, test_angle_preds, test_displacement_preds = model(
+            test_raw_inputs, test_diff_inputs
+        )
+
+        predicted_force = test_force_preds.squeeze().round()
+        true_force = test_force_labels
+        predicted_angles = test_angle_preds.squeeze() * 360.0  # Convert back to degrees
+        true_angles = test_angle_labels * 360.0  # Convert back to degrees
+        predicted_displacements = test_displacement_preds.squeeze()
+        true_displacements = test_displacement_labels
+
+        # Calculate Mean Absolute Error (MAE)
+        angle_mae = mean_absolute_error(true_angles, predicted_angles)
+        displacement_mae = mean_absolute_error(
+            true_displacements, predicted_displacements
+        )
+        force_accuracy = accuracy_score(true_force, predicted_force)
+
+        print(f"Force Detection Accuracy: {force_accuracy:.2f}")
+        print(f"Angle MAE: {angle_mae:.2f} degrees")
+        print(f"Displacement MAE: {displacement_mae:.2f} cm")
+
+    orientation_analysis(
+        true_angles, predicted_angles, center_orientations, data_folder_path, model_type
+    )
+    displacement_analysis(
+        true_displacements,
+        predicted_displacements,
+        center_displacements,
+        data_folder_path,
+        model_type,
+    )
+
+    # Plot the training and validation loss
+    plt.figure(figsize=(10, 6))
+    plt.plot(training_losses, label="Training Loss")
+    plt.plot(validation_losses, label="Validation Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training and Validation Loss Over Epochs")
+    plt.legend()
+    plt.grid(True)
+    plt.show()

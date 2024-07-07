@@ -18,7 +18,7 @@ if __name__ == "__main__":
 
     # Define the folder containing the CSV files
     data_folder_path = (
-        "/home/blackbird/uav_forest_ws/src/flex_sensor/data/train_orien_pos_nn_29_05"
+        "/home/victor/ws_sensor_combined/src/flex_sensor/data/04-07-8pos-5disp/"
     )
 
     # Define the beam discretization parameter
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     best_val_loss = float("inf")
 
     # Train the model
-    num_epochs = 1000
+    num_epochs = 50
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0

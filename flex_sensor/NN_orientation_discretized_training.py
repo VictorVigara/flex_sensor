@@ -15,10 +15,12 @@ from torch.utils.data import DataLoader, random_split
 if __name__ == "__main__":
 
     # Define the folder containing the CSV files
-    data_folder_path = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/14-06/"
+    data_folder_path = (
+        "/home/victor/ws_sensor_combined/src/flex_sensor/data/04-07-8pos-5disp/"
+    )
 
     # Define the beam discretization parameter
-    beam_discretization = 10  # Number of degrees per class, e.g., 1 degree interval
+    beam_discretization = 45  # Number of degrees per class, e.g., 1 degree interval
     num_orien_classes = int(360 / beam_discretization)  # Total number of classes
 
     ### LOAD TRAINING DATA ###
@@ -68,7 +70,7 @@ if __name__ == "__main__":
     best_val_loss = float("inf")
 
     # Train the model
-    num_epochs = 1000
+    num_epochs = 50
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0
