@@ -21,6 +21,7 @@ setup(
         "console_scripts": [
             "flex_sensor = flex_sensor.flex_sensor_driver:main",
             "collision_detector_node = flex_sensor.test_prediction_rosbag:main",
+            "save_contact_info_node = flex_sensor.save_bag_contact_data:main",
         ],
     },
 )

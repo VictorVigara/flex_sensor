@@ -46,8 +46,8 @@ class CollisionDetectorNode(Node):
             0.9  # Threshold from which a collision is detected [0-1]
         )
 
-        data_folder = "/home/blackbird/uav_forest_ws/src/flex_sensor/data"
-        data_date = "04-07-8pos-5disp"
+        data_folder = "/home/victor/ws_sensor_combined/src/flex_sensor/data"
+        data_date = "09-07-4orient-5pos"
 
         self.NN_models = (
             CNN_multi_task,
@@ -66,6 +66,7 @@ class CollisionDetectorNode(Node):
 
         # Load the trained model
         if self.model_type == "FFNN_CNN_raw":
+            print(f"Selecting FNN CNN model")
             model_path = f"{model_folder}/model.pth"
             self.model = CNN_multi_task()
         elif self.model_type == "FFNNRaw":
@@ -116,6 +117,7 @@ class CollisionDetectorNode(Node):
             self.max_values = normalization_params["max_values"]
 
         if isinstance(self.model, self.NN_models):
+            print(f"Charging model {self.model_type}")
             self.model.load_state_dict(torch.load(model_path))
             self.model.eval()
 
@@ -255,7 +257,12 @@ class CollisionDetectorNode(Node):
 
         # Publish collision information
         self.collision_msg = Float32MultiArray()
-        self.collision_msg.data = [contact_value, angle_value, displacement_value]
+        self.collision_msg.data = [
+            contact_value,
+            angle_value,
+            displacement_value,
+            force_applied.item(),
+        ]
         self.collision_publisher.publish(self.collision_msg)
 
 

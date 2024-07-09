@@ -71,7 +71,7 @@ if __name__ == "__main__":
     # Define the folder containing the CSV files
     model_type = "FFNN_CNN_raw"
     data_folder_path = (
-        "/home/victor/ws_sensor_combined/src/flex_sensor/data/04-07-8pos-5disp/"
+        "/home/victor/ws_sensor_combined/src/flex_sensor/data/09-07-4orient-5pos/"
     )
     center_orientations = [0, 90, 180, 270]
     center_displacements = [0.5, 1.0, 1.5, 2.0, 2.5]

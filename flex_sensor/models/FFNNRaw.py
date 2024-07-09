@@ -1,12 +1,12 @@
 import os
 
-import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.metrics import accuracy_score, mean_absolute_error
+from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, Dataset, random_split
 
 if __name__ == "__main__":
@@ -73,9 +73,9 @@ if __name__ == "__main__":
     model_type = "FFNNRaw"
     # Define the folder containing the CSV files
     data_folder_path = (
-        "/home/victor/ws_sensor_combined/src/flex_sensor/data/17-06-4positions/"
+        "/home/victor/ws_sensor_combined/src/flex_sensor/data/09-07-4orient-5pos/"
     )
-    center_orientations = [0, 45, 90, 135, 180, 225, 270, 315]
+    center_orientations = [0, 90, 180, 270]
     center_displacements = [0.5, 1.0, 1.5, 2.0, 2.5]
 
     model_output_path = os.path.join(data_folder_path, model_type)
@@ -85,14 +85,47 @@ if __name__ == "__main__":
     all_data, all_orientations, all_positions, all_contact = load_data(data_folder_path)
 
     ### NORMALIZE DATA ###
-    all_data, min_values, max_values = normalize_data(all_data)
+    """ all_data, min_values, max_values = normalize_data(all_data)
 
     # Save the min and max values
     normalization_params = {"min_values": min_values, "max_values": max_values}
     joblib.dump(
         normalization_params,
         os.path.join(model_output_path, "normalization_params.pkl"),
-    )
+    ) """
+
+    # Normalize the data
+    scaler = StandardScaler()
+    all_data = scaler.fit_transform(all_data)
+
+    """ # Assuming all_data is already a numpy array
+    all_data = np.array(all_data)
+
+    # Extracting each sensor's data
+    sensor_1 = all_data[:, 0].reshape(-1, 1)
+    sensor_2 = all_data[:, 1].reshape(-1, 1)
+    sensor_3 = all_data[:, 2].reshape(-1, 1)
+    sensor_4 = all_data[:, 3].reshape(-1, 1)
+
+    # Standardizing each sensor's data
+    scaler_1 = StandardScaler()
+    sensor_1_standardized = scaler_1.fit_transform(sensor_1.reshape(-1, 1))
+    joblib.dump(scaler_1, model_output_path + "/scaler_1.pkl")
+
+    scaler_2 = StandardScaler()
+    sensor_2_standardized = scaler_2.fit_transform(sensor_2.reshape(-1, 1))
+    joblib.dump(scaler_2, model_output_path + "/scaler_2.pkl")
+
+    scaler_3 = StandardScaler()
+    sensor_3_standardized = scaler_3.fit_transform(sensor_3.reshape(-1, 1))
+    joblib.dump(scaler_3, model_output_path + "/scaler_3.pkl")
+
+    scaler_4 = StandardScaler()
+    sensor_4_standardized = scaler_4.fit_transform(sensor_4.reshape(-1, 1))
+    joblib.dump(scaler_4, model_output_path + "/scaler_4.pkl")
+
+    # Combining standardized data back into a single array
+    all_data = np.hstack((sensor_1_standardized, sensor_2_standardized, sensor_3_standardized, sensor_4_standardized)) """
 
     # Normalize angles to [0, 1]
     all_orientations = all_orientations / 360.0
@@ -126,7 +159,7 @@ if __name__ == "__main__":
     best_val_loss = float("inf")
 
     # Train the model
-    num_epochs = 100
+    num_epochs = 10
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0
@@ -189,7 +222,42 @@ if __name__ == "__main__":
             test_displacement_labels,
             test_force_labels,
         ) = next(iter(test_loader))
-        test_force_preds, test_angle_preds, test_displacement_preds = model(test_inputs)
+
+        # Convert PyTorch tensor to NumPy array for compatibility with StandardScaler
+        test_inputs_np = test_inputs.numpy()
+
+        # Normalize the test_inputs using the fitted scaler
+        test_inputs_normalized_np = scaler.transform(test_inputs_np)
+
+        # Convert the normalized NumPy array back to a PyTorch tensor
+        test_inputs_normalized = torch.tensor(
+            test_inputs_normalized_np, dtype=torch.float32
+        )
+
+        """ # Convert PyTorch tensor to NumPy array for compatibility with StandardScaler
+        test_inputs_np = test_inputs.numpy()
+
+        # Extracting each sensor's data from test_inputs
+        test_sensor_1 = test_inputs_np[:, 0].reshape(-1, 1)
+        test_sensor_2 = test_inputs_np[:, 1].reshape(-1, 1)
+        test_sensor_3 = test_inputs_np[:, 2].reshape(-1, 1)
+        test_sensor_4 = test_inputs_np[:, 3].reshape(-1, 1)
+
+        # Normalize each sensor's data using the fitted scalers
+        test_sensor_1_normalized = scaler_1.transform(test_sensor_1)
+        test_sensor_2_normalized = scaler_2.transform(test_sensor_2)
+        test_sensor_3_normalized = scaler_3.transform(test_sensor_3)
+        test_sensor_4_normalized = scaler_4.transform(test_sensor_4)
+
+        # Combine normalized data back into a single array
+        test_inputs_normalized_np = np.hstack((test_sensor_1_normalized, test_sensor_2_normalized, test_sensor_3_normalized, test_sensor_4_normalized))
+
+        # Convert the normalized NumPy array back to a PyTorch tensor
+        test_inputs_normalized = torch.tensor(test_inputs_normalized_np, dtype=torch.float32) """
+
+        test_force_preds, test_angle_preds, test_displacement_preds = model(
+            test_inputs_normalized
+        )
 
         predicted_force = test_force_preds.squeeze().round()
         true_force = test_force_labels
