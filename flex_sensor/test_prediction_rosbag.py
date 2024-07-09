@@ -46,7 +46,7 @@ class CollisionDetectorNode(Node):
             0.9  # Threshold from which a collision is detected [0-1]
         )
 
-        data_folder = "/home/victor/ws_sensor_combined/src/flex_sensor/data"
+        data_folder = "/home/blackbird/uav_forest_ws/src/flex_sensor/data"
         data_date = "04-07-8pos-5disp"
 
         self.NN_models = (
@@ -132,6 +132,7 @@ class CollisionDetectorNode(Node):
         )
 
     def listener_callback(self, msg):
+        print(f"RECIBIENDOOOOOOOO")
         raw_values = np.array(msg.data).reshape(1, -1)
 
         # Calculate differences if required

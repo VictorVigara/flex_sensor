@@ -11,7 +11,7 @@ class FlexSensorDataRecorder:
         self.recording_positions = [
             0.0
         ]  # [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70]
-        self.recording_orientations = [0, 1, 2, 3]
+        self.recording_orientations = [4]
 
         self.data_path = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/"
 
