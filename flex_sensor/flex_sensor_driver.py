@@ -17,7 +17,7 @@ class flexDriver(Node):
         ### PARAMETERS ###
         ##################
 
-        self.timer_period = 0.05  # Sensor reading frequency
+        self.timer_period = 0.01  # Sensor reading frequency
 
         self.n_sensors = 4
         self.sensor_locations = [
@@ -36,7 +36,7 @@ class flexDriver(Node):
         self.linear_plot = False
 
         self.record_data = False
-        self.record_time = 30
+        self.record_time = 10
 
         self.calibration = False
 
@@ -130,19 +130,19 @@ class flexDriver(Node):
         raw_values.data = list(ADC_values)
         self.flex_sensor_pub.publish(raw_values)
 
-        force_direction = self.flex_conn.get_force_direction(ADC_values)
+        """ force_direction = self.flex_conn.get_force_direction(ADC_values)
 
         direction_msg = Int16()
         direction_msg.data = int(force_direction)
-        self.force_direction_pub.publish(direction_msg)
+        self.force_direction_pub.publish(direction_msg) """
 
         # self.flex_plot_analog.plot_flex_value(ADC_values, [0, 1023])
 
         # Normalized measurements
-        sensor_percent = self.flex_conn.get_sensor_percentage()
+        """ sensor_percent = self.flex_conn.get_sensor_percentage()
         self.flex_plot_percent.plot_flex_value(
             sensor_percent, [0, 100], angle=force_direction
-        )
+        ) """
 
         if self.record_data:
             self.data_recorder.record_data(ADC_values)

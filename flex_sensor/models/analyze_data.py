@@ -146,7 +146,7 @@ def radial_plot(
 
 
 if __name__ == "__main__":
-    data_folder_path = "/home/victor/ws_sensor_combined/src/flex_sensor/data/17-06-4positions"  # Change to your data folder path
+    data_folder_path = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/11-07-8orien-5pos"  # Change to your data folder path
     model_type = "data_analysis"
 
     all_data, all_orientations, all_positions, all_contact = load_data(data_folder_path)

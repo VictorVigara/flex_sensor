@@ -46,7 +46,7 @@ class CollisionDetectorNode(Node):
             0.9  # Threshold from which a collision is detected [0-1]
         )
 
-        data_folder = "/home/victor/ws_sensor_combined/src/flex_sensor/data"
+        data_folder = "/home/blackbird/uav_forest_ws/src/flex_sensor/data"
         data_date = "09-07-4orient-5pos"
 
         self.NN_models = (
