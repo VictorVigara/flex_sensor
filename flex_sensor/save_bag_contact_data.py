@@ -8,6 +8,25 @@ from rclpy.node import Node
 from scipy.spatial.transform import Rotation as R
 from std_msgs.msg import Float32, Float32MultiArray
 
+if __name__ == "__main__": 
+    from .models.FFNN_CNN_Raw import CNN_multi_task
+else: 
+    from .models.FFNN_CNN_Raw import CNN_multi_task
+
+
+
+def calculate_3d_distance_to_plane(point, plane_point1, plane_point2):
+    # Calculate the plane normal
+    glass_vector = np.array(plane_point2) - np.array(plane_point1)
+    plane_normal = np.cross(glass_vector, [0, 0, 1])
+    plane_normal /= np.linalg.norm(plane_normal)
+
+    # Calculate the distance from the point to the plane
+    point_vector = np.array(point) - np.array(plane_point1)
+    distance = np.dot(point_vector, plane_normal)
+
+    return np.abs(distance)
+
 
 def calculate_glass_normal(glass0_pose, glass1_pose):
     glass_vector = np.array(glass1_pose)[:2] - np.array(glass0_pose)[:2]  # x-y plane
@@ -28,10 +47,10 @@ def calculate_angle_between_uav_yaw_and_glass_normal(
     uav_orientation, glass0_pose, glass1_pose
 ):
     glass_normal = calculate_glass_normal(glass0_pose, glass1_pose)
-    print(f"Glass normal: {glass_normal}")
+    # print(f"Glass normal: {glass_normal}")
 
     uav_yaw = quaternion_to_yaw(uav_orientation)
-    print(f"UAV yaw: {uav_yaw}")
+    # print(f"UAV yaw: {uav_yaw}")
 
     uav_yaw_vector = np.array(
         [np.cos(np.radians(uav_yaw)), np.sin(np.radians(uav_yaw))]
@@ -86,45 +105,87 @@ def angle_between_pipe_uav_centers(uav_pose, uav_orientation, pipe_pose):
     return (relative_angle + 180) % 360 - 180  # Normalize to [-180, 180]
 
 
+class saveMode:
+    DATASET: "dataset"
+    MISSION: "mission"
+
+
+class obstacle:
+    PIPE: "pipe"
+    GLASS: "glass"
+
+
 class SaveContactInfoNode(Node):
     def __init__(self):
         super().__init__("save_contact_info_node")
 
-        self.obstacle = "pipe"  # 'glass' or 'pipe'
+        self.obstacle = "glass"  # 'glass' or 'pipe'
+        self.mode = "dataset"  # 'dataset' or 'mission"
 
         data_folder = "/media/victor/DATA/rosbag_asta_data/07-07-recording-nets/asta_net_in_porteria"
 
-        self.csv_file = os.path.join(data_folder, "contact_info.csv")
+        if self.obstacle == "glass" and self.mode == "dataset":
 
-        # Create the CSV file and write the header
-        with open(self.csv_file, mode="w", newline="") as file:
-            writer = csv.writer(file)
-            writer.writerow(
-                [
-                    "raw_value_1",
-                    "raw_value_2",
-                    "raw_value_3",
-                    "raw_value_4",
-                    "collision_predicted",
-                    "collision_value_predicted",
-                    "collision_orientation_predicted",
-                    "collision_displacement_predicted",
-                    "uav_pose_x",
-                    "uav_pose_y",
-                    "uav_pose_z",
-                    "uav_q_w",
-                    "uav_q_x",
-                    "uav_q_y",
-                    "uav_q_z",
-                    "pipe_pose_x",
-                    "pipe_pose_y",
-                    "pipe_pose_z",
-                    "pipe_q_w",
-                    "pipe_q_x",
-                    "pipe_q_y",
-                    "pipe_q_z",
-                ]
-            )
+            bag_folder = "/media/victor/DATA/rosbag_asta_data/11-07-manual-collisions-for-dataset/rosbag2_2024_07_11-14_01_34"
+            bag_folder.split("/")[-1]
+
+            self.csv_file = os.path.join(bag_folder, f"flight_data.csv")
+            print(f"csv path: {self.csv_file}")
+            with open(self.csv_file, mode="w", newline="") as file:
+                writer = csv.writer(file)
+                writer.writerow(
+                    [
+                        "raw_value_1",
+                        "raw_value_2",
+                        "raw_value_3",
+                        "raw_value_4",
+                        "uav_pose_x",
+                        "uav_pose_y",
+                        "uav_pose_z",
+                        "uav_q_x",
+                        "uav_q_y",
+                        "uav_q_z",
+                        "uav_q_w",
+                        "glass0_pose_x",
+                        "glass0_pose_y",
+                        "glass0_pose_z",
+                        "glass1_pose_x",
+                        "glass1_pose_y",
+                        "glass1_pose_z",
+                    ]
+                )
+
+        if self.obstacle == "pipe" and self.mode == "mission":
+            self.csv_file = os.path.join(data_folder, "contact_info.csv")
+            # Create the CSV file and write the header
+            with open(self.csv_file, mode="w", newline="") as file:
+                writer = csv.writer(file)
+                writer.writerow(
+                    [
+                        "raw_value_1",
+                        "raw_value_2",
+                        "raw_value_3",
+                        "raw_value_4",
+                        "collision_predicted",
+                        "collision_value_predicted",
+                        "collision_orientation_predicted",
+                        "collision_displacement_predicted",
+                        "uav_pose_x",
+                        "uav_pose_y",
+                        "uav_pose_z",
+                        "uav_q_x",
+                        "uav_q_y",
+                        "uav_q_z",
+                        "uav_q_w",
+                        "pipe_pose_x",
+                        "pipe_pose_y",
+                        "pipe_pose_z",
+                        "pipe_q_w",
+                        "pipe_q_x",
+                        "pipe_q_y",
+                        "pipe_q_z",
+                    ]
+                )
 
         # Initialize ROS2 subscribers
         self.create_subscription(
@@ -193,7 +254,40 @@ class SaveContactInfoNode(Node):
 
     def flex_sensor_cb(self, msg):
         self.raw_values = msg.data[:4]
-        # print(f"Flex sensor values: {self.raw_values}")
+
+        # Save glass dataset
+        if self.obstacle == "glass" and self.mode == "dataset":
+            if (
+                None not in self.raw_values
+                and None not in self.uav_pose
+                and None not in self.uav_q_xyzw
+                and self.glass0_pose != None
+                and self.glass1_pose != None
+            ):
+                # Save the data to the CSV file
+                with open(self.csv_file, mode="a", newline="") as file:
+                    writer = csv.writer(file)
+                    writer.writerow(
+                        [
+                            self.raw_values[0],
+                            self.raw_values[1],
+                            self.raw_values[2],
+                            self.raw_values[3],
+                            self.uav_pose[0],
+                            self.uav_pose[1],
+                            self.uav_pose[2],
+                            self.uav_q_xyzw[0],
+                            self.uav_q_xyzw[1],
+                            self.uav_q_xyzw[2],
+                            self.uav_q_xyzw[3],
+                            self.glass0_pose[0],
+                            self.glass0_pose[1],
+                            self.glass0_pose[2],
+                            self.glass1_pose[0],
+                            self.glass1_pose[1],
+                            self.glass1_pose[2],
+                        ]
+                    )
 
     def collision_detection_cb(self, contact_msg):
         self.collision_predicted = contact_msg.data[0]
@@ -240,28 +334,29 @@ class SaveContactInfoNode(Node):
                     ]
                 ) """
 
-        # Calculate the angle between the UAV's x-axis and the line joining the centers of the UAV and pipe
-        if self.obstacle == "pipe":
-            angle_gt, disp_gt, angle_err, disp_err = self.calculate_gt_error_pipe()
-        elif self.obstacle == "glass":
-            angle_gt, disp_gt, angle_err, disp_err = self.calculate_gt_error_glass()
+        if self.mode == "mission":
+            # Calculate the angle between the UAV's x-axis and the line joining the centers of the UAV and pipe
+            if self.obstacle == "pipe":
+                angle_gt, disp_gt, angle_err, disp_err = self.calculate_gt_error_pipe()
+            elif self.obstacle == "glass":
+                angle_gt, disp_gt, angle_err, disp_err = self.calculate_gt_error_glass()
 
-        if angle_gt is not None:
-            self.collision_msg = Float32MultiArray()
-            self.collision_msg.data = [
-                self.collision_predicted,
-                angle_gt,
-                disp_gt,
-            ]
-            self.collision_publisher_gt.publish(self.collision_msg)
+            if angle_gt is not None:
+                self.collision_msg = Float32MultiArray()
+                self.collision_msg.data = [
+                    self.collision_predicted,
+                    angle_gt,
+                    disp_gt,
+                ]
+                self.collision_publisher_gt.publish(self.collision_msg)
 
-            angle_error_msg = Float32()
-            angle_error_msg.data = angle_err
-            self.angle_error_publisher.publish(angle_error_msg)
+                angle_error_msg = Float32()
+                angle_error_msg.data = angle_err
+                self.angle_error_publisher.publish(angle_error_msg)
 
-            displacement_error_msg = Float32()
-            displacement_error_msg.data = disp_err
-            self.displacement_error_publisher.publish(displacement_error_msg)
+                displacement_error_msg = Float32()
+                displacement_error_msg.data = disp_err
+                self.displacement_error_publisher.publish(displacement_error_msg)
 
     def drone_mocap_cb(self, msg):
         self.uav_pose = [msg.pose.position.x, msg.pose.position.y, msg.pose.position.z]
@@ -356,7 +451,7 @@ class SaveContactInfoNode(Node):
             angle_gt = calculate_angle_between_uav_yaw_and_glass_normal(
                 self.uav_q_xyzw, self.glass0_pose, self.glass1_pose
             )
-            print(f"Angle gt: {angle_gt}")
+
             angle_err = calculate_angle_error(
                 self.collision_orientation_predicted, angle_gt
             )
@@ -365,28 +460,33 @@ class SaveContactInfoNode(Node):
                 angle_gt += 360
 
             if self.collision_predicted == 1.0:
+                print(f"Angle gt: {angle_gt}")
+                print(
+                    f"uavq: {self.uav_q_xyzw}, g0: {self.glass0_pose}, g1: {self.glass1_pose}"
+                )
                 print(f"Initial collision: {self.initial_contact}")
                 if not self.initial_contact:
                     print(f"Initializing contact: ")
                     self.initial_contact = True
-                    self.initial_uav_pipe_distance = calculate_2d_distance(
-                        self.uav_pose, self.pipe_pose
+                    self.initial_uav_glass_distance = calculate_3d_distance_to_plane(
+                        self.uav_pose, self.glass0_pose, self.glass1_pose
                     )
                     print(
-                        f"initial_uav_pipe_distance: {self.initial_uav_pipe_distance}"
+                        f"initial_uav_glass_distance: {self.initial_uav_glass_distance}"
                     )
                     displacement_err = 0.0
                     disp_gt = 0.0
                 else:
                     print(f"Calculating displacement: ")
                     # Calculate the actual displacement since initial contact
-                    actual_uav_pipe_distance = calculate_2d_distance(
-                        self.uav_pose, self.pipe_pose
+                    actual_uav_glass_distance = calculate_3d_distance_to_plane(
+                        self.uav_pose, self.glass0_pose, self.glass1_pose
                     )
-                    print(f"actual distance: {actual_uav_pipe_distance}")
-                    disp_gt = abs(
-                        self.initial_uav_pipe_distance - actual_uav_pipe_distance
-                    )
+                    print(f"actual distance: {actual_uav_glass_distance}")
+                    disp_gt = (
+                        abs(self.initial_uav_glass_distance - actual_uav_glass_distance)
+                        * 100
+                    )  # meters to cm
                     print(f"Current displacement: {disp_gt}")
                     displacement_err = disp_gt - self.collision_displacement_predicted
                     print(f"displacement calculated: {displacement_err}")
