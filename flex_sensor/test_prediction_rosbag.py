@@ -36,9 +36,7 @@ class CollisionDetectorNode(Node):
     def __init__(self):
         super().__init__("collision_detector_node")
 
-        self.model_type = (
-            "FFNN_CNN_raw"  # 'FFNNRaw', 'linear_raw', 'linear_differences',
-        )
+        self.model_type = "FFNNRaw_sincos_nocont_0grad_64hidden_bs32"  # 'FFNNRaw', 'linear_raw', 'linear_differences',
         # 'knn_raw', 'knn_differences', 'FFNN_CNN_raw',
         # 'FFNNRawDiff',
 
@@ -46,8 +44,8 @@ class CollisionDetectorNode(Node):
             0.9  # Threshold from which a collision is detected [0-1]
         )
 
-        data_folder = "/home/blackbird/uav_forest_ws/src/flex_sensor/data"
-        data_date = "09-07-4orient-5pos"
+        data_folder = "/home/victor/ws_sensor_combined/src/flex_sensor/data"
+        data_date = "19-07-4orient-5pos"
 
         self.NN_models = (
             CNN_multi_task,
@@ -72,7 +70,7 @@ class CollisionDetectorNode(Node):
         elif self.model_type == "FFNNRaw":
             model_path = f"{model_folder}/model.pth"
             self.model = FFNNRaw()
-        elif self.model_type == "FFNNRaw_sincos":
+        elif "FFNNRaw_sincos" in self.model_type:
             model_path = f"{model_folder}/model.pth"
             self.model = FNNRaw_sincos()
         elif self.model_type == "FFNNRawDiff":
