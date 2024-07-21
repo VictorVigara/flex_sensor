@@ -1,90 +1,108 @@
 import os
-
 import matplotlib.pyplot as plt
 import pandas as pd
 from models.common import load_data
 from sklearn.utils import resample
 
+def create_plots(data, bag_folder):
+    fig, axs = plt.subplots(4, 1, figsize=(15, 20), sharex=True)
+
+    axs[0].plot(data.index, data["raw_value_1"], label="Sensor 1")
+    axs[0].plot(data.index, data["raw_value_2"], label="Sensor 2")
+    axs[0].plot(data.index, data["raw_value_3"], label="Sensor 3")
+    axs[0].plot(data.index, data["raw_value_4"], label="Sensor 4")
+    axs[0].set_ylabel("Raw Values")
+    axs[0].set_title("Flex Sensor Raw Values")
+    axs[0].legend()
+
+    axs[1].plot(data.index, data["collision_predicted"], label="Contact", color="tab:orange")
+    axs[1].set_ylabel("Contact")
+    axs[1].set_title("Contact Prediction (0, 1)")
+    axs[1].legend()
+
+    axs[2].plot(data.index, data["angle_gt"], label="Angle GT", color="tab:green")
+    axs[2].set_ylabel("Angle GT (degrees)")
+    axs[2].set_title("Ground Truth Angle (degrees)")
+    axs[2].legend()
+
+    axs[3].plot(data.index, data["displacement_gt"], label="Displacement GT", color="tab:red")
+    axs[3].set_ylabel("Displacement GT (cm)")
+    axs[3].set_title("Ground Truth Displacement (cm)")
+    axs[3].legend()
+
+    axs[-1].set_xlabel("Time Steps")
+
+    plt.tight_layout()
+    plot_path = os.path.join(bag_folder, "flight_dataset_plots.png")
+    plt.savefig(plot_path)
+    plt.show()
 
 def list_folders(directory):
-    # Get all entries in the directory
     entries = os.listdir(directory)
-
-    # Filter out only the folders
-    folders = [
-        entry for entry in entries if os.path.isdir(os.path.join(directory, entry))
-    ]
-
+    folders = [entry for entry in entries if os.path.isdir(os.path.join(directory, entry))]
     return folders
 
-
-def read_flight_datasets(bags_folder, eval_bag):
-
+def read_flight_datasets(bags_folder, eval_bag, filtered = False):
     bags = list_folders(bags_folder)
     file_list = []
+
+    if filtered: 
+        dataset_file = "flight_dataset_filtered.csv"
+    else: 
+        dataset_file = "flight_dataset.csv"
 
     for bag in bags:
         file_dataset = None
         if bag != eval_bag:
             for f in os.listdir(os.path.join(bags_folder, bag)):
-                if f.endswith("flight_dataset.csv"):
+                if f.endswith(dataset_file):
                     file_dataset = f
             if file_dataset is not None:
                 file_list.append(os.path.join(bags_folder, bag, file_dataset))
             else:
-                print(f" Bag {bag} does not have flight_dataset.csv file")
+                print(f" Bag {bag} does not have {dataset_file} file")
 
-    # Initialize lists to store contact and no contact data
     contact_data = []
     no_contact_data = []
 
-    # Loop through all files
     for file_name in file_list:
         data = pd.read_csv(file_name)
-
-        # Separate contact and no contact data
         contact_data.append(data[data["collision_predicted"] == 1])
         no_contact_data.append(data[data["collision_predicted"] == 0])
 
-    # Concatenate all contact and no contact data
     contact_data = pd.concat(contact_data, ignore_index=True)
     no_contact_data = pd.concat(no_contact_data, ignore_index=True)
 
     return contact_data, no_contact_data
 
-
 def balance_dataset(contact_data, no_contact_data):
-    # Set displacement to 0 for no contact data
     no_contact_data["displacement_gt"] = 0.0
-
-    # Resample no contact data to match the number of contact samples
-    no_contact_data_balanced = resample(
-        no_contact_data, replace=False, n_samples=len(contact_data), random_state=42
-    )
-
+    no_contact_data_balanced = resample(no_contact_data, replace=False, n_samples=len(contact_data), random_state=42)
     return no_contact_data_balanced
 
-
-def save_eval_bag_dataset(bags_folder, eval_bag):
+def save_eval_bag_dataset(bags_folder, eval_bag, filtered = False):
     eval_bag_folder = os.path.join(bags_folder, eval_bag)
     file_dataset = None
 
+    if filtered: 
+        dataset_file = "flight_dataset_filtered.csv"
+    else: 
+        dataset_file = "flight_dataset.csv"
+    
     for f in os.listdir(eval_bag_folder):
-        if f.endswith("flight_dataset.csv"):
+        if f.endswith(dataset_file):
             file_dataset = f
-
+            
     if file_dataset is not None:
         eval_data = pd.read_csv(os.path.join(eval_bag_folder, file_dataset))
-
-        eval_path = os.path.join(bags_folder, "eval_flight_dataset.csv")
+                
+        eval_path = os.path.join(bags_folder, "eval_" + dataset_file)
         eval_data.to_csv(eval_path, index=False)
-        print(f"Evaluation dataset saved as eval_flight_dataset.csv in {eval_path}")
+        print(f"Evaluation dataset saved as eval_{dataset_file} in {eval_path}")
     else:
-        print(f" Evaluation Bag {eval_bag} does not have flight_dataset.csv file")
-
+        print(f" Evaluation Bag {eval_bag} does not have {dataset_file} file")
 
 def summarize_dataset(dataset):
-    # Summary statistics
     total_entries = len(dataset)
     contact_entries = len(dataset[dataset["collision_predicted"] == 1])
     no_contact_entries = len(dataset[dataset["collision_predicted"] == 0])
@@ -102,127 +120,106 @@ def summarize_dataset(dataset):
     summary_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in summary.items()]))
     return summary_df
 
-
 def plot_angle_distribution(contact_data, bags_folder, name):
     plt.figure(figsize=(10, 6))
-    plt.hist(contact_data["angle_gt"], bins=30, edgecolor="k", alpha=0.7)
-    plt.title("Distribution of Angles in Contact Data")
-    plt.xlabel("Angle (degrees)")
-    plt.ylabel("Frequency")
+    plt.hist(contact_data["angle_gt"], bins=30, edgecolor='k', alpha=0.7)
+    plt.title(name)
+    plt.xlabel('Angle (degrees)')
+    plt.ylabel('Frequency')
     plt.grid(True)
 
-    # Save the plot to a file
     plot_path = os.path.join(bags_folder, f"{name}.png")
     plt.savefig(plot_path)
     plt.show()
 
-
 def plot_displacement_distribution(contact_data, bags_folder):
     plt.figure(figsize=(10, 6))
-    plt.hist(contact_data["displacement_gt"], bins=30, edgecolor="k", alpha=0.7)
-    plt.title("Distribution of Displacements in Contact Data")
-    plt.xlabel("Displacement (cm)")
-    plt.ylabel("Frequency")
+    plt.hist(contact_data["displacement_gt"], bins=30, edgecolor='k', alpha=0.7)
+    plt.title('Distribution of Displacements in Contact Data')
+    plt.xlabel('Displacement (cm)')
+    plt.ylabel('Frequency')
     plt.grid(True)
 
-    # Save the plot to a file
     plot_path = os.path.join(bags_folder, "displacement_distribution_contacts.png")
     plt.savefig(plot_path)
     plt.show()
 
-
 def main():
-    # Path to the flight datasets folder
-    bags_folder = (
-        "/media/victor/DATA/rosbag_asta_data/11-07-manual-collisions-for-dataset"
-    )
-    eval_bag = "rosbag2_2024_07_11-12_57_21"
+    bags_folder = "/media/victor/DATA/rosbag_asta_data/11-07-manual-collisions-for-dataset"
+    eval_bag = 'rosbag2_2024_07_09-13_57_12'
+
+    only_flight = True
+    filtered = True
+
+    if filtered: 
+        dataset_file = "flight_dataset_filtered.csv"
+    else: 
+        dataset_file = "flight_dataset.csv"
 
     list_folders(bags_folder)
 
-    # Path to the calibration data folder
-    calibration_folder = (
-        "/home/victor/ws_sensor_combined/src/flex_sensor/data/11-07-8orien-5pos"
-    )
+    calibration_folder = "/home/victor/ws_sensor_combined/src/flex_sensor/data/11-07-8orien-5pos"
 
-    # Read flight datasets
-    contact_flight_data, no_contact_flight_data = read_flight_datasets(
-        bags_folder, eval_bag
-    )
+    contact_flight_data, no_contact_flight_data = read_flight_datasets(bags_folder, eval_bag, filtered)
 
-    # Load calibration data
-    calibration_data, orientations, positions, _ = load_data(calibration_folder)
-    calibration_data = pd.DataFrame(
-        calibration_data,
-        columns=["raw_value_1", "raw_value_2", "raw_value_3", "raw_value_4"],
-    )
-    calibration_data["collision_predicted"] = 1
-    calibration_data[
-        "angle_gt"
-    ] = orientations  # Assuming orientations represent angles
-    calibration_data[
-        "displacement_gt"
-    ] = positions  # Assuming positions represent displacements
+    if only_flight:
+        combined_contact_data = contact_flight_data
+    else:
+        calibration_data, orientations, positions, _ = load_data(calibration_folder)
+        calibration_data = pd.DataFrame(calibration_data, columns=["raw_value_1", "raw_value_2", "raw_value_3", "raw_value_4"])
+        calibration_data["collision_predicted"] = 1
+        calibration_data["angle_gt"] = orientations
+        calibration_data["displacement_gt"] = positions
 
-    # Combine contact data from flight datasets and calibration data
-    combined_contact_data = pd.concat(
-        [contact_flight_data, calibration_data], ignore_index=True
-    )
+        # Discard calibration data with positions = 0.0
+        calibration_data = calibration_data[calibration_data["displacement_gt"] != 0.0]
 
-    # Balance the dataset
-    balanced_no_contact_data = balance_dataset(
-        combined_contact_data, no_contact_flight_data
-    )
+        total_contact_samples = len(contact_flight_data)
+        unique_combinations = calibration_data.groupby(['angle_gt', 'displacement_gt']).size().reset_index(name='count')
+        samples_per_combination = total_contact_samples // len(unique_combinations)
 
-    # Combine balanced dataset
-    balanced_dataset = pd.concat(
-        [combined_contact_data, balanced_no_contact_data], ignore_index=True
-    )
+        sampled_calibration_data = pd.concat(
+            [resample(calibration_data[(calibration_data["angle_gt"] == row["angle_gt"]) & (calibration_data["displacement_gt"] == row["displacement_gt"])],
+                      replace=False,
+                      n_samples=samples_per_combination,
+                      random_state=42)
+             for _, row in unique_combinations.iterrows()],
+            ignore_index=True
+        )
 
-    # Save the balanced dataset to a CSV file
-    balanced_dataset.to_csv(
-        os.path.join(bags_folder, "balanced_flight_dataset.csv"), index=False
-    )
+        combined_contact_data = pd.concat([contact_flight_data, sampled_calibration_data], ignore_index=True)
 
-    # Save the evaluation dataset
-    save_eval_bag_dataset(bags_folder, eval_bag)
+    balanced_no_contact_data = balance_dataset(combined_contact_data, no_contact_flight_data)
 
-    # Summarize the datasets separately
-    flight_summary_df = summarize_dataset(
-        pd.concat([contact_flight_data, no_contact_flight_data], ignore_index=True)
-    )
-    calibration_summary_df = summarize_dataset(calibration_data)
+    balanced_dataset = pd.concat([combined_contact_data, balanced_no_contact_data], ignore_index=True)
+
+    balanced_dataset.to_csv(os.path.join(bags_folder, "balanced_" + dataset_file), index=False)
+
+    save_eval_bag_dataset(bags_folder, eval_bag, filtered)
+
+    flight_summary_df = summarize_dataset(pd.concat([contact_flight_data, no_contact_flight_data], ignore_index=True))
+    if not only_flight:
+        calibration_summary_df = summarize_dataset(calibration_data)
     combined_summary_df = summarize_dataset(balanced_dataset)
 
     print("Flight Data Summary:\n", flight_summary_df)
-    print("Calibration Data Summary:\n", calibration_summary_df)
+    if not only_flight:
+        print("Calibration Data Summary:\n", calibration_summary_df)
     print("Combined Data Summary:\n", combined_summary_df)
 
-    # Save the summaries to CSV files
-    flight_summary_df.to_csv(
-        os.path.join(bags_folder, "flight_data_summary.csv"), index=False
-    )
-    calibration_summary_df.to_csv(
-        os.path.join(bags_folder, "calibration_data_summary.csv"), index=False
-    )
-    combined_summary_df.to_csv(
-        os.path.join(bags_folder, "combined_data_summary.csv"), index=False
-    )
+    flight_summary_df.to_csv(os.path.join(bags_folder, "flight_data_summary.csv"), index=False)
+    if not only_flight:
+        calibration_summary_df.to_csv(os.path.join(bags_folder, "calibration_data_summary.csv"), index=False)
+    combined_summary_df.to_csv(os.path.join(bags_folder, "combined_data_summary.csv"), index=False)
 
-    # Plot the angle distribution for contact data
-    plot_angle_distribution(
-        combined_contact_data, bags_folder, "combined_angle_distribution_contacts"
-    )
-    plot_angle_distribution(
-        calibration_data, bags_folder, "calibration_angle_distribution_contacts"
-    )
-    plot_angle_distribution(
-        contact_flight_data, bags_folder, "flight_angle_distribution_contacts"
-    )
+    plot_angle_distribution(combined_contact_data, bags_folder, 'combined_angle_distribution_contacts')
+    if not only_flight:
+        plot_angle_distribution(calibration_data, bags_folder, 'calibration_angle_distribution_contacts')
+    plot_angle_distribution(contact_flight_data, bags_folder, 'flight_angle_distribution_contacts')
 
-    # Plot the displacement distribution for contact data
     plot_displacement_distribution(combined_contact_data, bags_folder)
 
+    create_plots(balanced_dataset, bags_folder)
 
 if __name__ == "__main__":
     main()
