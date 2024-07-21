@@ -1,12 +1,10 @@
 import os
-
 import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn as sns
 
 # Ruta a la carpeta de datos
-data_folder_path = (
-    "/home/victor/ws_sensor_combined/src/flex_sensor/data/04-07-8pos-5disp/"
-)
+data_folder_path = "/media/victor/DATA/rosbag_asta_data/11-07-manual-collisions-for-dataset"
 
 # Función para leer el reporte de clasificación
 def read_classification_report(file_path):
@@ -18,26 +16,23 @@ def read_classification_report(file_path):
 
     data = []
     for line in report_lines:
-        if line.strip() == "":
-            continue
         parts = line.split()
-        if parts[0] == "accuracy":
-            break
-        data.append(parts)
+        if len(parts) < 5 or parts[0] in ["accuracy", "macro", "weighted", "MAE"]:
+            continue
+        data.append(parts[:5])
 
     columns = ["Class", "Precision", "Recall", "F1-Score", "Support"]
     df = pd.DataFrame(data, columns=columns)
     df.set_index("Class", inplace=True)
-    df = df.astype(
-        {"Precision": float, "Recall": float, "F1-Score": float, "Support": int}
-    )
+    
+    # Convert columns to the appropriate data types
+    df = df.astype({"Precision": float, "Recall": float, "F1-Score": float, "Support": int})
 
     return df
 
-
 # Obtener las carpetas de los modelos
 model_folders = [
-    f
+    os.path.join(data_folder_path, f)
     for f in os.listdir(data_folder_path)
     if os.path.isdir(os.path.join(data_folder_path, f))
 ]
@@ -46,60 +41,46 @@ model_folders = [
 orientation_reports = {}
 displacement_reports = {}
 
-for model in model_folders:
-    orientation_report_path = os.path.join(
-        data_folder_path, model, "classification_report_orientation.txt"
-    )
-    displacement_report_path = os.path.join(
-        data_folder_path, model, "classification_report_displacement.txt"
-    )
+for model_folder in model_folders:
+    orientation_report_path = os.path.join(model_folder, "classification_report_orientation.txt")
+    displacement_report_path = os.path.join(model_folder, "classification_report_displacement.txt")
 
     if os.path.exists(orientation_report_path):
-        orientation_reports[model] = read_classification_report(orientation_report_path)
+        model_name = os.path.basename(model_folder)
+        orientation_reports[model_name] = read_classification_report(orientation_report_path)
 
     if os.path.exists(displacement_report_path):
-        displacement_reports[model] = read_classification_report(
-            displacement_report_path
-        )
+        model_name = os.path.basename(model_folder)
+        displacement_reports[model_name] = read_classification_report(displacement_report_path)
 
-# Función para plotear comparaciones
-def plot_comparisons(reports, metric, title):
-    plt.figure(figsize=(12, 8))
+# Función para plotear comparaciones con subfiguras
+def plot_comparisons_with_subplots(reports, title, output_path):
+    metrics = ["Precision", "Recall", "F1-Score"]
+    fig, axs = plt.subplots(1, 3, figsize=(20, 6))
 
-    for model, report in reports.items():
-        plt.plot(report.index, report[metric], marker="o", label=model)
-
-    plt.title(title)
-    plt.xlabel("Classes")
-    plt.ylabel(metric)
-    plt.legend()
-    plt.grid(True)
+    for ax, metric in zip(axs, metrics):
+        for model, report in reports.items():
+            ax.plot(report.index, report[metric], marker="o", label=model)
+        ax.set_title(f"{metric} for {title}")
+        ax.set_xlabel("Classes")
+        ax.set_ylabel(metric)
+        ax.legend(title='Models')
+        ax.grid(True)
+    
+    plt.tight_layout()
+    plt.savefig(output_path)
     plt.show()
 
-
-# Graficar comparaciones
-plot_comparisons(
+# Graficar comparaciones para orientaciones
+plot_comparisons_with_subplots(
     orientation_reports,
-    "Precision",
-    "Comparison of Precision for Orientation Detection",
-)
-plot_comparisons(
-    orientation_reports, "Recall", "Comparison of Recall for Orientation Detection"
-)
-plot_comparisons(
-    orientation_reports, "F1-Score", "Comparison of F1-Score for Orientation Detection"
+    "Orientation Detection Metrics",
+    os.path.join(data_folder_path, "orientation_detection_metrics.png")
 )
 
-plot_comparisons(
+# Graficar comparaciones para desplazamientos
+plot_comparisons_with_subplots(
     displacement_reports,
-    "Precision",
-    "Comparison of Precision for Displacement Detection",
-)
-plot_comparisons(
-    displacement_reports, "Recall", "Comparison of Recall for Displacement Detection"
-)
-plot_comparisons(
-    displacement_reports,
-    "F1-Score",
-    "Comparison of F1-Score for Displacement Detection",
+    "Displacement Detection Metrics",
+    os.path.join(data_folder_path, "displacement_detection_metrics.png")
 )
