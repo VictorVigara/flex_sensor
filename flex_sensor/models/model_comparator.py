@@ -19,6 +19,10 @@ def read_classification_report(file_path):
         parts = line.split()
         if len(parts) < 5 or parts[0] in ["accuracy", "macro", "weighted", "MAE"]:
             continue
+        try:
+            float(parts[1])
+        except: 
+            continue
         data.append(parts[:5])
 
     columns = ["Class", "Precision", "Recall", "F1-Score", "Support"]
