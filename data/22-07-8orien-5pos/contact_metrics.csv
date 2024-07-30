@@ -1,0 +1,3 @@
+,Accuracy,Precision,Recall,F1,AUC
+Contact_FFNNRaw_16hc_100ep,1.0,1.0,1.0,1.0,1.0
+Contact_FFNNDiff_16hc_100ep,1.0,1.0,1.0,1.0,1.0

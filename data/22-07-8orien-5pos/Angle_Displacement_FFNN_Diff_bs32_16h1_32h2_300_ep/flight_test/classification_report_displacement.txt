@@ -1,0 +1,28 @@
+Confusion Matrix:
+[[106  39  25  26  11]
+ [ 48  13   5   6  10]
+ [ 27  20   9   5   2]
+ [ 20  12  16   6   6]
+ [ 18   6   9   6   5]]
+
+Classification Report:
+              precision    recall  f1-score   support
+
+    0.5±0.25       0.48      0.51      0.50       207
+    1.0±0.25       0.14      0.16      0.15        82
+    1.5±0.25       0.14      0.14      0.14        63
+    2.0±0.25       0.12      0.10      0.11        60
+    2.5±0.25       0.15      0.11      0.13        44
+
+    accuracy                           0.30       456
+   macro avg       0.21      0.21      0.21       456
+weighted avg       0.30      0.30      0.30       456
+
+
+Displacement MAE = 1.1603617679650422 cms
+Displacement MSE = 2.78 cm
+Displacement RMSE = 1.67 cm
+Displacement StdDev = 1.67 cm
+Displacement Median = 0.80 cm
+Displacement IQR = 1.58 cm
+Displacement Max = 8.08 cm

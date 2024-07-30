@@ -1,0 +1,3 @@
+Model,MAE,Std Dev,Median,IQR,Max,MAE displacement,Displacement Std Dev,Displacement Median,Displacement IQR,Displacement Max
+FFNNDiff_2NN_bs32_ep50_32_64,,,,,,0.07569497274855773,0.1,0.06,0.12,0.36
+FFNNRaw_2NN_bs32_ep50_32_64,,,,,,0.03028276840845744,0.04,0.03,0.05,0.16

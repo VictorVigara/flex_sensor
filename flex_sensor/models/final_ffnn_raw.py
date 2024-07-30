@@ -5,16 +5,20 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.metrics import accuracy_score, mean_absolute_error
+from sklearn.metrics import accuracy_score, mean_absolute_error, precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, Dataset, random_split
 
+""" from common import load_dataset, load_test_dataset, angle_displacement_loss
+from result_analysis import displacement_analysis, orientation_analysis """
+
 if __name__ == "__main__":
     from common import load_dataset, load_test_dataset, angle_displacement_loss
-    from result_analysis import displacement_analysis, orientation_analysis
+    from result_analysis import displacement_analysis, orientation_analysis, contact_analysis
 else:
-    from .common import load_dataset, load_test_dataset, angle_displacement_loss
-    from .result_analysis import displacement_analysis, orientation_analysis
+    from common import load_dataset, load_test_dataset, angle_displacement_loss
+    from result_analysis import displacement_analysis, orientation_analysis, contact_analysis
        
 def split_dataset(dataset, combined_data, batch_size = 32, network_type=None, filtered = False):
     if combined_data == False: 
@@ -99,22 +103,22 @@ class FFNNRawDataset(Dataset):
 class ContactDetectionNN(nn.Module):
     def __init__(self):
         super(ContactDetectionNN, self).__init__()
-        self.fc1 = nn.Linear(4, 32)
-        self.fc2 = nn.Linear(32, 16)
+        self.fc1 = nn.Linear(4, 16)
+        #self.fc2 = nn.Linear(32, 16)
         self.fc3 = nn.Linear(16, 1)
 
     def forward(self, x):
         x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
+        #x = torch.relu(self.fc2(x))
         x = torch.sigmoid(self.fc3(x))
         return x
 
 
 # Define the angle and displacement prediction network
 class AngleDisplacementNN(nn.Module):
-    def __init__(self, hidden1, hidden2):
+    def __init__(self, input_size, hidden1=32, hidden2=64):
         super(AngleDisplacementNN, self).__init__()
-        self.fc1 = nn.Linear(4,hidden1)
+        self.fc1 = nn.Linear(input_size,hidden1)
         #self.fc2 = nn.Linear(hidden1, hidden2)
         self.fc_sin_angle = nn.Linear(hidden1, hidden2)
         self.fc_sin_angle2 = nn.Linear(hidden2, 1)
@@ -139,11 +143,11 @@ class AngleDisplacementNN(nn.Module):
         #x = self.dropout(x)
         x = torch.relu(self.fc1(x))
         sin_angle = torch.relu(self.fc_sin_angle(x))
-        sin_angle = self.fc_sin_angle2(sin_angle)
+        sin_angle = (self.fc_sin_angle2(sin_angle))
         cos_angle = torch.relu(self.fc_cos_angle(x))
-        cos_angle = self.fc_cos_angle2(cos_angle)
-        displacement = self.fc_displacement(x)
-        displacement = self.fc_displacement2(displacement)
+        cos_angle = (self.fc_cos_angle2(cos_angle))
+        displacement = torch.relu(self.fc_displacement(x))
+        displacement = (self.fc_displacement2(displacement))
         
         return sin_angle, cos_angle, displacement
 
@@ -161,8 +165,14 @@ def train_contact_detection_network(data, labels, model_output_path, combined_da
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
     dataset = FFNNRawDataset(data, contact=labels)
-    train_loader, val_loader, test_loader = split_dataset(dataset, combined_data=combined_data, batch_size= 32, filtered=filtered)
+    train_loader, val_loader, _ = split_dataset(dataset, combined_data=combined_data, batch_size= 32, filtered=filtered)
     #train_loader = DataLoader(dataset, batch_size=32, shuffle=True)
+
+    all_data_test, all_orientations_test, all_positions_test, contact_test = load_test_dataset(test_data_folder_path)
+    all_data_test = scaler.transform(all_data_test)
+    test_set = FFNNRawDataset(all_data_test, contact=contact_test)
+    test_size = len(test_set)
+    test_loader = DataLoader(test_set, batch_size=test_size, shuffle=False, drop_last=True)
 
     training_losses = []
     validation_losses = []
@@ -216,15 +226,14 @@ def train_contact_detection_network(data, labels, model_output_path, combined_da
         else: 
             inputs, contact_labels, _, _, _ = next(iter(test_loader))
         predicted_contacts = best_model(inputs)
-    predicted_contacts = predicted_contacts.squeeze().round()
-    contact_accuracy = accuracy_score(predicted_contacts, contact_labels)
-    print(f"Contact Detection Accuracy: {contact_accuracy:.2f}")
+
+    contact_analysis(contact_labels, predicted_contacts, model_output_path)
 
     return best_model, test_loader
 
 
-def train_angle_displacement_network(data, angles, displacements, model_output_path, combined_data, filtered = False, hidden1 = 32, hidden2 = 64):
-    model = AngleDisplacementNN(hidden1, hidden2)
+def train_angle_displacement_network(data, angles, displacements, model_output_path, combined_data, filtered = False, hidden1 = 16, hidden2 = 32):
+    model = AngleDisplacementNN(hidden1 = hidden1, hidden2=hidden2, input_size=4)
     criterion = angle_displacement_loss
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
@@ -235,7 +244,7 @@ def train_angle_displacement_network(data, angles, displacements, model_output_p
     validation_losses = []
     # Track the best validation loss
     best_val_loss = float("inf")
-    num_epochs = 400
+    num_epochs = 300
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0
@@ -302,19 +311,19 @@ def train_angle_displacement_network(data, angles, displacements, model_output_p
     return best_model, test_loader
 
 
-def eval_model(model_output_path, combined_data, model, test_loader=None):
+def eval_model(model_output_path, combined_data, model, test_loader=None, test_with_flight_data = False):
     # Load the best model
     """ model = AngleDisplacementNN()
     model.load_state_dict(torch.load(model_output_path + "/model.pth")) """
-    scaler = joblib.load(model_output_path + "/scaler.pkl")
+    #scaler = joblib.load(model_output_path + "/scaler.pkl")
 
     # Test the model
     model.eval()
     
     with torch.no_grad():
-        if not combined_data:
+        if not combined_data and not test_with_flight_data:
             inputs, sin_angle_targets, cos_angle_targets, test_displacement_labels = next(iter(test_loader))
-        else: 
+        elif combined_data or test_with_flight_data: 
             inputs, test_contact_labels, sin_angle_targets, cos_angle_targets, test_displacement_labels = next(iter(test_loader))
         (
             test_sin_angle_preds,
@@ -341,20 +350,14 @@ def eval_model(model_output_path, combined_data, model, test_loader=None):
                 true_angles[idx] = true_angle + 360
 
         predicted_displacements = test_displacement_preds.squeeze()
-        true_displacements = test_displacement_labels
-
-        # Calculate Mean Absolute Error (MAE)
-        angle_mae = mean_absolute_error(true_angles, predicted_angles)
-        displacement_mae = mean_absolute_error(true_displacements, predicted_displacements)
-
-        print(f"Angle MAE: {angle_mae:.2f} degrees")
-        print(f"Displacement MAE: {displacement_mae:.2f} cm")
+        true_displacements = test_displacement_labels    
     
-    test_inputs = np.array(inputs)
-    if not combined_data:
+    if not combined_data and not test_with_flight_data:
         test_force_labels = np.full(np.array(true_angles).shape[0], True)
+        test_inputs = None
     else: 
         test_force_labels = np.array(test_contact_labels)
+        test_inputs = np.array(inputs)
 
     orientation_analysis(
         true_angles, predicted_angles, center_orientations, data_folder_path, model_type, test_force_labels, test_inputs
@@ -371,16 +374,24 @@ def eval_model(model_output_path, combined_data, model, test_loader=None):
 
 
 if __name__ == "__main__":
-    model_type = "FFNNRaw_2NN_special_hidden_combined_data_bs32_ep800_dp01"
+    
     # Define the folder containing the CSV files
-    data_folder_path = "/media/victor/DATA/rosbag_asta_data/11-07-manual-collisions-for-dataset"
+    data_folder_path = "/home/victor/ws_sensor_combined/src/flex_sensor/data/22-07-8orien-5pos"
     center_orientations = [0, 45, 90, 135, 180, 225, 270]
     center_displacements = [0.5, 1.0, 1.5, 2.0, 2.5]
-    combined_data = True
+    
+    combined_data = False
+    test_with_flight_data = True
+    test_data_folder_path = "/media/victor/DATA/rosbag_asta_data/25-07-manual-flight-collisions"
+    
     filtered = False
+    
     train = True
-    hidden1 = 32
-    hidden2 = 64
+    
+    hidden1 = 16
+    hidden2 = 32
+
+    model_type = f"Contact_FFNNRaw_16hc_100ep" #f"Angle_Displacement_FFNN_Raw_bs32_{hidden1}h1_{hidden2}_h2_300_ep"
 
     model_output_path = os.path.join(data_folder_path, model_type)
     os.makedirs(model_output_path, exist_ok=True)
@@ -408,10 +419,24 @@ if __name__ == "__main__":
 
         # Train Angle and Displacement Prediction Network
         angle_displacement_model, angle_displacement_test_loader= train_angle_displacement_network(contact_data, contact_orientations, contact_positions, model_output_path, combined_data, filtered=filtered, hidden1=hidden1, hidden2=hidden2)
-        
+
+    if not combined_data and test_with_flight_data: 
+        scaler_path = f"{model_output_path}/scaler.pkl"
+        scaler = joblib.load(scaler_path)
+        all_data_test, all_orientations_test, all_positions_test, contact_test = load_test_dataset(test_data_folder_path)
+        all_data_test = scaler.transform(all_data_test)
+
+        # Create dataset and split into training and validation sets
+        test_dataset = FFNNRawDataset(all_data_test, angles = all_orientations_test, displacements = all_positions_test, contact=contact_test)
+        test_size = len(test_dataset)
+        angle_displacement_test_loader = DataLoader(test_dataset, batch_size=test_size, shuffle=False, drop_last=True)
+
+    if not train: 
+        angle_displacement_model = AngleDisplacementNN(hidden1 = hidden1, hidden2=hidden2, input_size=4)
+        angle_displacement_model.load_state_dict(torch.load(model_output_path + "/angle_displacement_model.pth"))
     
     if not train and combined_data:
-        angle_displacement_model = AngleDisplacementNN(hidden1, hidden2)
+        angle_displacement_model = AngleDisplacementNN(hidden1 = hidden1, hidden2=hidden2, input_size=4)
         angle_displacement_model.load_state_dict(torch.load(model_output_path + "/angle_displacement_model.pth"))
         scaler_path = f"{model_output_path}/scaler.pkl"
         scaler = joblib.load(scaler_path)
@@ -423,5 +448,4 @@ if __name__ == "__main__":
         test_size = len(test_dataset)
         angle_displacement_test_loader = DataLoader(test_dataset, batch_size=test_size, shuffle=False, drop_last=True)
 
-
-    eval_model(model_output_path, combined_data, angle_displacement_model, angle_displacement_test_loader)
+    eval_model(model_output_path, combined_data, angle_displacement_model, angle_displacement_test_loader, test_with_flight_data)

@@ -123,11 +123,16 @@ def orientation_analysis(
     contact, 
     raw_values
 ):  
+    
+    if raw_values is not None: 
+        test_type = "flight_test"
+    else: 
+        test_type = "calib_test"
     y_test_angle_contact = y_test_angle_deg[contact==1]
     y_pred_angle_contact = y_pred_angle_deg[contact==1]
 
     # Crear carpeta para el modelo
-    model_output_path = os.path.join(data_folder_path, model_type)
+    model_output_path = os.path.join(data_folder_path, model_type, test_type)
     os.makedirs(model_output_path, exist_ok=True)
     contact_events_folder = os.path.join(model_output_path, "contact_events")
     os.makedirs(contact_events_folder, exist_ok=True)
@@ -158,10 +163,11 @@ def orientation_analysis(
             current_contact_y_true.append(y_test_angle_deg[idx].item())
             current_contact_y_pred.append(y_pred_angle_deg[idx].item())
             current_contact_errors.append(error)
-            current_sensor1.append(raw_values[idx][0])
-            current_sensor2.append(raw_values[idx][1])
-            current_sensor3.append(raw_values[idx][2])
-            current_sensor4.append(raw_values[idx][3])
+            if raw_values is not None:
+                current_sensor1.append(raw_values[idx][0])
+                current_sensor2.append(raw_values[idx][1])
+                current_sensor3.append(raw_values[idx][2])
+                current_sensor4.append(raw_values[idx][3])
 
 
             in_contact_event = True
@@ -172,19 +178,20 @@ def orientation_analysis(
             
             if in_contact_event:
                 if len(current_contact_y_true) > 3:
-                    save_contact_event_plots(
-                        current_contact_y_true,
-                        current_contact_y_pred,
-                        current_contact_errors,
-                        contact_event_idx,
-                        y_test_angle_deg[idx - 1].item(),
-                        contact_events_folder,
-                        current_sensor1, 
-                        current_sensor2, 
-                        current_sensor3, 
-                        current_sensor4,
-                        "angle"
-                    )
+                    if raw_values is not None:
+                        save_contact_event_plots(
+                            current_contact_y_true,
+                            current_contact_y_pred,
+                            current_contact_errors,
+                            contact_event_idx,
+                            y_test_angle_deg[idx - 1].item(),
+                            contact_events_folder,
+                            current_sensor1, 
+                            current_sensor2, 
+                            current_sensor3, 
+                            current_sensor4,
+                            "angle"
+                        )
                 contact_event_idx += 1
                 current_contact_y_true = []
                 current_contact_y_pred = []
@@ -246,8 +253,16 @@ def orientation_analysis(
     # Maximum Error
     angle_max = np.max(np.abs(angle_errors_contact))
 
+    # Mean Squared Error (MSE)
+    angle_mse = np.mean(np.square(angle_errors_contact))
+
+    # Root Mean Squared Error (RMSE)
+    angle_rmse = np.sqrt(angle_mse)
+
     # Print the metrics
     print(f"Angle MAE: {angle_mae:.2f} degrees")
+    print(f"Angle MSE: {angle_mse:.2f}")
+    print(f"Angle RMSE: {angle_rmse:.2f} degrees")
     print(f"Angle Std Dev: {angle_std:.2f} degrees")
     print(f"Angle Median: {angle_median:.2f} degrees")
     print(f"Angle IQR: {angle_iqr:.2f} degrees")
@@ -261,7 +276,14 @@ def orientation_analysis(
         f.write(np.array2string(conf_matrix_angle))
         f.write("\n\nClassification Report:\n")
         f.write(class_report_angle)
-        f.write(f"\n\nMAE angle = {angle_mae} deg")
+        f.write(f"\n\nAngle MAE = {angle_mae} degrees\n")
+        f.write(f"Angle MSE = {angle_mse:.2f} degrees\n")
+        f.write(f"Angle RMSE = {angle_rmse:.2f} degrees\n")
+        f.write(f"Angle StdDev = {angle_std:.2f} degrees\n")
+        f.write(f"Angle Median = {angle_median:.2f} degrees\n")
+        f.write(f"Angle IQR = {angle_iqr:.2f} degrees\n")
+        f.write(f"Angle Max = {angle_max:.2f} degrees\n")
+        
 
     # Graficar la matriz de confusión para orientaciones
     plt.figure(figsize=(10, 7))
@@ -361,16 +383,21 @@ def orientation_analysis(
     plt.savefig(os.path.join(model_output_path, "time_series_orientation.png"))
     plt.show()
 
-    save_time_series_comparison_error(raw_values[:,0], raw_values[:,1], raw_values[:,2], raw_values[:,3], y_test_angle_deg, y_pred_angle_all_contact, angle_errors_all, model_output_path, "angle")
+    if raw_values is not None:
+        save_time_series_comparison_error(raw_values[:,0], raw_values[:,1], raw_values[:,2], raw_values[:,3], y_test_angle_deg, y_pred_angle_all_contact, angle_errors_all, model_output_path, "angle")
 
 
 def displacement_analysis(
     y_test_disp, y_pred_disp, centers_displacement, data_folder_path, model_type, contact, raw_values
 ):
+    if raw_values is not None: 
+        test_type = "flight_test"
+    else: 
+        test_type = "calib_test"
     y_test_disp_contact = y_test_disp[contact==1]
     y_pred_disp_contact = y_pred_disp[contact==1]
     # Crear carpeta para el modelo
-    model_output_path = os.path.join(data_folder_path, model_type)
+    model_output_path = os.path.join(data_folder_path, model_type, test_type)
     os.makedirs(model_output_path, exist_ok=True)
     contact_events_folder = os.path.join(model_output_path, "contact_events")
     os.makedirs(contact_events_folder, exist_ok=True)
@@ -400,10 +427,11 @@ def displacement_analysis(
             current_contact_y_pred.append(y_pred_disp[idx].item())
             current_contact_errors.append(error)
 
-            current_sensor1.append(raw_values[idx][0])
-            current_sensor2.append(raw_values[idx][1])
-            current_sensor3.append(raw_values[idx][2])
-            current_sensor4.append(raw_values[idx][3])
+            if raw_values is not None:
+                current_sensor1.append(raw_values[idx][0])
+                current_sensor2.append(raw_values[idx][1])
+                current_sensor3.append(raw_values[idx][2])
+                current_sensor4.append(raw_values[idx][3])
 
             in_contact_event = True
         else:
@@ -412,19 +440,20 @@ def displacement_analysis(
 
             if in_contact_event:
                 if len(current_contact_y_true) > 3:
-                    save_contact_event_plots(
-                            current_contact_y_true,
-                            current_contact_y_pred,
-                            current_contact_errors,
-                            contact_event_idx,
-                            y_test_disp[idx - 1].item(),
-                            contact_events_folder,
-                            current_sensor1, 
-                            current_sensor2, 
-                            current_sensor3, 
-                            current_sensor4,
-                            "displacement"
-                        )
+                    if raw_values is not None:
+                        save_contact_event_plots(
+                                current_contact_y_true,
+                                current_contact_y_pred,
+                                current_contact_errors,
+                                contact_event_idx,
+                                y_test_disp[idx - 1].item(),
+                                contact_events_folder,
+                                current_sensor1, 
+                                current_sensor2, 
+                                current_sensor3, 
+                                current_sensor4,
+                                "displacement"
+                            )
                     contact_event_idx += 1
                 current_contact_y_true = []
                 current_contact_y_pred = []
@@ -474,7 +503,35 @@ def displacement_analysis(
     print("Classification Report for Displacement Prediction:")
     print(class_report_disp)
 
+    # Standard Deviation of the errors
+    disp_std = np.std(disp_errors_contact)
+
+    # Median Absolute Error
+    disp_median = np.median(np.abs(disp_errors_contact))
+
+    # Interquartile Range (IQR)
+    q1 = np.percentile(disp_errors_contact, 25)
+    q3 = np.percentile(disp_errors_contact, 75)
+    disp_iqr = q3 - q1
+
+    # Maximum Error
+    disp_max = np.max(np.abs(disp_errors_contact))
+
+    # Mean Squared Error (MSE)
+    disp_mse = np.mean(np.square(disp_errors_contact))
+
+    # Root Mean Squared Error (RMSE)
+    disp_rmse = np.sqrt(disp_mse)
+
+
+    # Print the metrics
     print(f"MAE displacement = {disp_mae} cm")
+    print(f"MSE displacement = {disp_mse} ")
+    print(f"RMSE displacement = {disp_rmse} cm")
+    print(f"Displacement Std Dev: {disp_std:.2f} cm")
+    print(f"Displacement Median: {disp_median:.2f} cm")
+    print(f"Displacement IQR: {disp_iqr:.2f} cm")
+    print(f"Displacement Max: {disp_max:.2f} cm")
 
     # Guardar el informe de clasificación para desplazamientos en un archivo
     with open(
@@ -484,7 +541,14 @@ def displacement_analysis(
         f.write(np.array2string(conf_matrix_disp))
         f.write("\n\nClassification Report:\n")
         f.write(class_report_disp)
-        f.write(f"\n\nMAE displacement = {disp_mae} cms")
+        f.write(f"\n\nDisplacement MAE = {disp_mae} cms\n")
+        f.write(f"Displacement MSE = {disp_mse:.2f} cm\n")
+        f.write(f"Displacement RMSE = {disp_rmse:.2f} cm\n")
+        f.write(f"Displacement StdDev = {disp_std:.2f} cm\n")
+        f.write(f"Displacement Median = {disp_median:.2f} cm\n")
+        f.write(f"Displacement IQR = {disp_iqr:.2f} cm\n")
+        f.write(f"Displacement Max = {disp_max:.2f} cm\n")
+        
 
     # Graficar la matriz de confusión para desplazamientos
     plt.figure(figsize=(10, 7))
@@ -568,5 +632,67 @@ def displacement_analysis(
     plt.savefig(os.path.join(model_output_path, "time_series_displacement.png"))
     plt.show()
 
-    save_time_series_comparison_error(raw_values[:,0], raw_values[:,1], raw_values[:,2], raw_values[:,3], y_test_disp, y_pred_disp_all_contact, disp_errors_all, model_output_path, "displacement")
+    if raw_values is not None:
+        save_time_series_comparison_error(raw_values[:,0], raw_values[:,1], raw_values[:,2], raw_values[:,3], y_test_disp, y_pred_disp_all_contact, disp_errors_all, model_output_path, "displacement")
 
+
+import numpy as np
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+import os
+
+def contact_analysis(contact_labels, predicted_contacts, output_path):
+    # Squeeze and round the predicted contacts
+    predicted_contacts = predicted_contacts.squeeze().round()
+
+    # Calculate the metrics
+    contact_accuracy = accuracy_score(contact_labels, predicted_contacts)
+    contact_precision = precision_score(contact_labels, predicted_contacts)
+    contact_recall = recall_score(contact_labels, predicted_contacts)
+    contact_f1 = f1_score(contact_labels, predicted_contacts)
+    contact_auc = roc_auc_score(contact_labels, predicted_contacts)
+
+    # Print the metrics
+    print(f"Contact Detection Accuracy: {contact_accuracy:.2f}")
+    print(f"Contact Detection Precision: {contact_precision:.2f}")
+    print(f"Contact Detection Recall: {contact_recall:.2f}")
+    print(f"Contact Detection F1 Score: {contact_f1:.2f}")
+    print(f"Contact Detection AUC: {contact_auc:.2f}")
+
+    # Save the metrics to a text file
+    with open(os.path.join(output_path, "contact_analysis_metrics.txt"), "w") as f:
+        f.write(f"Contact Detection Accuracy: {contact_accuracy:.2f}\n")
+        f.write(f"Contact Detection Precision: {contact_precision:.2f}\n")
+        f.write(f"Contact Detection Recall: {contact_recall:.2f}\n")
+        f.write(f"Contact Detection F1 Score: {contact_f1:.2f}\n")
+        f.write(f"Contact Detection AUC: {contact_auc:.2f}\n")
+
+    # Metrics to plot
+    metrics = ['Accuracy', 'Precision', 'Recall', 'F1 Score', 'AUC']
+    values = [contact_accuracy, contact_precision, contact_recall, contact_f1, contact_auc]
+
+    # Plotting
+    x = np.arange(len(metrics))  # the label locations
+    fig, ax = plt.subplots()
+    bars = ax.bar(x, values, width=0.35)
+
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    ax.set_ylabel('Scores')
+    ax.set_title('Contact Analysis Metrics')
+    ax.set_xticks(x)
+    ax.set_xticklabels(metrics)
+    ax.set_ylim(0, 1)
+
+    # Attach a text label above each bar in *bars*, displaying its height.
+    for bar in bars:
+        height = bar.get_height()
+        ax.annotate(f'{height:.2f}',
+                    xy=(bar.get_x() + bar.get_width() / 2, height),
+                    xytext=(0, 3),  # 3 points vertical offset
+                    textcoords="offset points",
+                    ha='center', va='bottom')
+
+    # Save the plot to the output path
+    plt.tight_layout()
+    plt.grid()
+    plt.savefig(os.path.join(output_path, "contact_analysis_metrics.png"))
+    plt.show()

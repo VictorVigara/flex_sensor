@@ -24,7 +24,7 @@ def split_dataset(dataset, batch_size=32):
     test_size = len(val_test_dataset) - val_size
     val_dataset, test_dataset = random_split(val_test_dataset, [val_size, test_size])
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=test_size, shuffle=False)
 
@@ -59,51 +59,43 @@ class TimeSeriesDataset(Dataset):
             self.cos_angles[idx], 
             self.displacements[idx], 
         )
-                
 
-class FeedForwardNN(nn.Module):
-    def __init__(self, input_size, hidden1, hidden2):
-        super(FeedForwardNN, self).__init__()
-        self.fc1 = nn.Linear(input_size, hidden1)
-        self.fc2 = nn.Linear(input_size, hidden1)
-        self.fc3 = nn.Linear(input_size, hidden1)
-        self.fc4 = nn.Linear(input_size, hidden1)
-        self.combined_fc = nn.Linear(hidden1*4, hidden2)
-        self.fc_sin_angle = nn.Linear(hidden2, hidden2)
-        self.fc_sin_angle2 = nn.Linear(hidden2, 1)
-        self.fc_cos_angle = nn.Linear(hidden2, hidden2)
-        self.fc_cos_angle2 = nn.Linear(hidden2, 1)
-        self.fc_displacement = nn.Linear(hidden2, hidden2)
-        self.fc_displacement2 = nn.Linear(hidden2, 1)
+class RNNModel(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, windows_size):
+        super(RNNModel, self).__init__()
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc_sin_angle = nn.Linear(hidden_size*windows_size, hidden_size)
+        self.fc_sin_angle2 = nn.Linear(hidden_size, 1)
+        self.fc_cos_angle = nn.Linear(hidden_size*windows_size, hidden_size)
+        self.fc_cos_angle2 = nn.Linear(hidden_size, 1)
+        self.fc_displacement = nn.Linear(hidden_size*windows_size, hidden_size)
+        self.fc_displacement2 = nn.Linear(hidden_size, 1)
         self.dropout = nn.Dropout(0.2)
 
+        self.hidden_size = hidden_size
+
     def forward(self, x):
-        #x = x.view(x.size(0), -1)  # Flatten the input
-        s1_w = x[:,:,0]
-        s2_w = x[:,:,1]
-        s3_w = x[:,:,2]
-        s4_w = x[:,:,3]
-        x1 = torch.relu(self.fc1(s1_w))
-        x2 = torch.relu(self.fc2(s2_w))
-        x3 = torch.relu(self.fc3(s3_w))
-        x4 = torch.relu(self.fc4(s4_w))
-        x_concat = torch.cat((x1, x2, x3, x4), dim=1)
-        x_concat = torch.relu(self.combined_fc(x_concat))
-        sin_angle = torch.relu(self.fc_sin_angle(x_concat))
-        sin_angle = self.fc_sin_angle2(sin_angle)
-        cos_angle = torch.relu(self.fc_cos_angle(x_concat))
-        cos_angle = self.fc_cos_angle2(cos_angle)
-        displacement = torch.relu(self.fc_displacement(x_concat))
-        displacement = self.fc_displacement2(displacement)
+        x, _ = self.lstm(x)
+        batch_size, sequence_length, hidden_size = x.size()
+        x = x.contiguous().view(batch_size, -1)  # Flatten the LSTM output
+        #x = x.contiguous().view(32, -1)
+        #x = x[:, -1, :]  # Take the output of the last time step
+        sin_angle = torch.relu(self.fc_sin_angle(x))
+        sin_angle = (self.fc_sin_angle2(sin_angle))
+        cos_angle = torch.relu(self.fc_cos_angle(x))
+        cos_angle = (self.fc_cos_angle2(cos_angle))
+        displacement = torch.relu(self.fc_displacement(x))
+        displacement = (self.fc_displacement2(displacement))
         return sin_angle, cos_angle, displacement
 
 def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs, model_output_folder):
     best_val_loss = float("inf")
     training_losses = []
     validation_losses = []
-    model.train()
+    
     for epoch in range(num_epochs):
         epoch_loss = 0
+        model.train()
         for windows, sin_angle_targets, cos_angle_targets, displacement_targets in train_loader:
             windows, sin_angle_targets, cos_angle_targets, displacement_targets = windows.to(device), sin_angle_targets.to(device), cos_angle_targets.to(device), displacement_targets.to(device)
             optimizer.zero_grad()
@@ -127,7 +119,12 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
             best_val_loss = val_loss
             best_model = model
 
-        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss/len(train_loader):.4f}, Val Loss: {val_loss:.4f}')
+        if (epoch + 1) % 10 == 0:
+            print(
+                f"Epoch [{epoch + 1}/{num_epochs}], Training Loss: {avg_epoch_loss:.4f}, Validation Loss: {val_loss:.4f}"
+            )
+
+        #print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss/len(train_loader):.4f}, Val Loss: {val_loss:.4f}')
     
     # Plot the training and validation loss
     plt.figure(figsize=(10, 6))
@@ -142,6 +139,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
     plt.savefig(model_output_folder + "/training_loss_angle-disp.png")
 
     return best_model
+
 def evaluate_model(model, data_loader, criterion):
     model.eval()
     total_loss = 0
@@ -196,7 +194,6 @@ def test_model(model, data_loader, center_orientations, center_displacements, da
     test_inputs = np.array(windows[:, -1, :].cpu())
     test_force_labels = contacts
 
-
     orientation_analysis(
         true_angles, predicted_angles, center_orientations, data_folder_path, model_type, test_force_labels, test_inputs
     )
@@ -210,26 +207,25 @@ def test_model(model, data_loader, center_orientations, center_displacements, da
         test_inputs
     )
 
-
 def main():
-    data_folder_path = "/media/victor/DATA/rosbag_asta_data/11-07-manual-collisions-for-dataset"
-    model_type = "FFNN_windows_ws20_h1_128_h2_128_bs128"
+    data_folder_path = "/media/victor/DATA/rosbag_asta_data/25-07-manual-flight-collisions"
+    
 
-    window_size = 20  # Must match the window size used in the previous script
-    num_epochs = 300
-    batch_size = 128
+    num_epochs = 350
+    batch_size =32
     learning_rate = 0.001
-    hidden1 = 128
-    hidden2 = 128
+    hidden_size = 32
+    num_layers = 1
+
+    model_type = f"RNN_w30_flight_data_{num_layers}layers_{hidden_size}hs_{batch_size}bs_{num_epochs}_ep"
 
     center_orientations = [0, 45, 90, 135, 180, 225, 270]
     center_displacements = [0.5, 1.0, 1.5, 2.0, 2.5]
 
     model_output_folder = data_folder_path + "/" + model_type
     os.makedirs(model_output_folder, exist_ok=True)
-    
-     # Number of sensor readings per window
 
+    # Load training dataset
     windows = np.load(os.path.join(data_folder_path, "windows.npy"), allow_pickle=True)
     labels = np.load(os.path.join(data_folder_path, "labels.npy"), allow_pickle=True)
 
@@ -239,7 +235,7 @@ def main():
     angles = np.array(labels[contact_mask][:, 1]).astype(float)  # Select only angle and displacement
     displacements = np.array(labels[contact_mask][:, 2]).astype(float)
 
-        # Scale the windows
+    # Scale the windows
     scaler = StandardScaler()
     windows_shape = windows.shape
     windows = windows.reshape(-1, windows_shape[-1])  # Reshape to 2D for scaling
@@ -259,38 +255,36 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=test_size, shuffle=False)
 
-    model = FeedForwardNN(window_size, hidden1, hidden2).to(device)
+    model = RNNModel(input_size=windows.shape[2], hidden_size=hidden_size, num_layers=num_layers, windows_size=windows_shape[1]).to(device)
     criterion = angle_displacement_loss
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     best_model = train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs, model_output_folder)
     torch.save(best_model.state_dict(), os.path.join(model_output_folder, "angle_displacement_model.pth"))
-    
+
     # Load test dataset
-    windows = np.load(os.path.join(data_folder_path, "test_windows.npy"), allow_pickle=True)
-    labels = np.load(os.path.join(data_folder_path, "test_labels.npy"), allow_pickle=True)
+    test_windows = np.load(os.path.join(data_folder_path, "test_windows.npy"), allow_pickle=True)
+    test_labels = np.load(os.path.join(data_folder_path, "test_labels.npy"), allow_pickle=True)
 
     # Select only contact windows
-    windows = windows
-    angles = np.array(labels[:, 1]).astype(float)  # Select only angle and displacement
-    displacements = np.array(labels[:, 2]).astype(float)
-    contacts = labels[:, 0]
+    test_windows = test_windows
+    test_angles = np.array(test_labels[:, 1]).astype(float)  # Select only angle and displacement
+    test_displacements = np.array(test_labels[:, 2]).astype(float)
+    test_contacts = test_labels[:, 0]
 
-    windows_shape = windows.shape
-    windows = windows.reshape(-1, windows_shape[-1])  # Reshape to 2D for scaling
-    windows = scaler.fit_transform(windows)
-    windows = windows.reshape(windows_shape)  # Reshape back to original shape
+    test_windows_shape = test_windows.shape
+    test_windows = test_windows.reshape(-1, test_windows_shape[-1])  # Reshape to 2D for scaling
+    test_windows = scaler.transform(test_windows)
+    test_windows = test_windows.reshape(test_windows_shape)  # Reshape back to original shape
 
-    # Create dataset and split into training and validation sets
-    test_dataset = TimeSeriesDataset(windows, angles, displacements)
-    test_size = len(test_dataset)
-    test_loader = DataLoader(test_dataset, batch_size=test_size, shuffle=False, drop_last=True)
-
+    # Create dataset and DataLoader for test set
+    test_dataset = TimeSeriesDataset(test_windows, test_angles, test_displacements)
+    test_loader = DataLoader(test_dataset, batch_size=test_windows_shape[0], shuffle=False, drop_last=True)
 
     # Evaluate on test dataset
-    test_model(best_model, test_loader, center_orientations, center_displacements, data_folder_path, model_type, contacts)
-
+    test_model(best_model, test_loader, center_orientations, center_displacements, data_folder_path, model_type, test_contacts)
 
 if __name__ == "__main__":
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cpu')
+    #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     main()

@@ -11,10 +11,11 @@ from torch.utils.data import DataLoader, Dataset, random_split
 
 if __name__ == "__main__":
     from common import load_dataset, load_test_dataset, angle_displacement_loss
-    from result_analysis import displacement_analysis, orientation_analysis
-else:
+    from result_analysis import displacement_analysis, orientation_analysis, contact_analysis
+    from final_ffnn_raw import AngleDisplacementNN
+""" else:
     from .common import load_dataset, load_test_dataset, angle_displacement_loss
-    from .result_analysis import displacement_analysis, orientation_analysis
+    from .result_analysis import displacement_analysis, orientation_analysis """
 
 def calculate_differences(data):
     num_samples = data.shape[0]
@@ -117,17 +118,17 @@ class ContactDetectionNN(nn.Module):
     def __init__(self):
         super(ContactDetectionNN, self).__init__()
         self.fc1 = nn.Linear(6, 32)
-        self.fc2 = nn.Linear(32, 16)
-        self.fc3 = nn.Linear(16, 1)
+        #self.fc2 = nn.Linear(32, 16)
+        self.fc3 = nn.Linear(32, 1)
 
     def forward(self, x):
         x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
+        #x = torch.relu(self.fc2(x))
         x = torch.sigmoid(self.fc3(x))
         return x
 
 # Define the angle and displacement prediction network
-class AngleDisplacementNN(nn.Module):
+""" class AngleDisplacementNN(nn.Module):
     def __init__(self):
         super(AngleDisplacementNN, self).__init__()
         self.fc1 = nn.Linear(6, 32)
@@ -145,7 +146,7 @@ class AngleDisplacementNN(nn.Module):
         sin_angle = self.fc_sin_angle(x)
         cos_angle = self.fc_cos_angle(x)
         displacement = self.fc_displacement(x)
-        return sin_angle, cos_angle, displacement
+        return sin_angle, cos_angle, displacement """
 
 def train_contact_detection_network(data, labels, model_output_path, combined_data):
     model = ContactDetectionNN()
@@ -153,12 +154,19 @@ def train_contact_detection_network(data, labels, model_output_path, combined_da
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
     dataset = FFNNDiffDataset(data, contact=labels)
-    train_loader, val_loader, test_loader = split_dataset(dataset, combined_data=combined_data, batch_size=32)
+    train_loader, val_loader, _ = split_dataset(dataset, combined_data=combined_data, batch_size=64)
+
+    all_data_test, all_orientations_test, all_positions_test, contact_test = load_test_dataset(test_data_folder_path)
+    all_data_test = calculate_differences(all_data_test)
+    all_data_test = scaler.transform(all_data_test)
+    test_set = FFNNDiffDataset(all_data_test, contact=contact_test)
+    test_size = len(test_set)
+    test_loader = DataLoader(test_set, batch_size=test_size, shuffle=False, drop_last=True)
 
     training_losses = []
     validation_losses = []
     best_val_loss = float("inf")
-    num_epochs = 50
+    num_epochs = 100
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0
@@ -199,24 +207,22 @@ def train_contact_detection_network(data, labels, model_output_path, combined_da
         else:
             inputs, contact_labels, _, _, _, _ = next(iter(test_loader))
         predicted_contacts = best_model(inputs)
-    predicted_contacts = predicted_contacts.squeeze().round()
-    contact_accuracy = accuracy_score(predicted_contacts, contact_labels)
-    print(f"Contact Detection Accuracy: {contact_accuracy:.2f}")
+    contact_analysis(contact_labels, predicted_contacts, model_output_path)
 
     return best_model, test_loader
 
 def train_angle_displacement_network(data, angles, displacements, model_output_path, combined_data):
-    model = AngleDisplacementNN()
+    model = AngleDisplacementNN(input_size=6, hidden1=16, hidden2=32)
     criterion = angle_displacement_loss
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
     dataset = FFNNDiffDataset(data, angles=angles, displacements=displacements, contact=None)
-    train_loader, val_loader, test_loader = split_dataset(dataset, combined_data=combined_data, batch_size=32)
+    train_loader, val_loader, test_loader = split_dataset(dataset, combined_data=combined_data, batch_size=64)
 
     training_losses = []
     validation_losses = []
     best_val_loss = float("inf")
-    num_epochs = 1000
+    num_epochs = 300
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0
@@ -277,14 +283,14 @@ def train_angle_displacement_network(data, angles, displacements, model_output_p
 
     return best_model, test_loader
 
-def eval_model(model_output_path, combined_data, model, test_loader=None):
+def eval_model(model_output_path, combined_data, model, test_loader=None, test_with_flight_data = False):
     scaler = joblib.load(model_output_path + "/scaler.pkl")
     model.eval()
     
     with torch.no_grad():
-        if not combined_data:
+        if not combined_data and not test_with_flight_data:
             inputs, sin_angle_targets, cos_angle_targets, test_displacement_labels = next(iter(test_loader))
-        else:
+        elif combined_data or test_with_flight_data:
             inputs, test_contact_labels, sin_angle_targets, cos_angle_targets, test_displacement_labels, raw_values = next(iter(test_loader))
         test_sin_angle_preds, test_cos_angle_preds, test_displacement_preds = model(inputs)
 
@@ -314,11 +320,13 @@ def eval_model(model_output_path, combined_data, model, test_loader=None):
         print(f"Angle MAE: {angle_mae:.2f} degrees")
         print(f"Displacement MAE: {displacement_mae:.2f} cm")
     
-    test_inputs = np.array(raw_values)
-    if not combined_data:
+    
+    if not combined_data and not test_with_flight_data:
         test_force_labels = np.full(np.array(true_angles).shape[0], True)
+        test_inputs = None
     else:
         test_force_labels = np.array(test_contact_labels)
+        test_inputs = np.array(raw_values)
 
     orientation_analysis(
         true_angles, predicted_angles, center_orientations, data_folder_path, model_type, test_force_labels, test_inputs
@@ -334,11 +342,15 @@ def eval_model(model_output_path, combined_data, model, test_loader=None):
     )
 
 if __name__ == "__main__":
-    model_type = "FFNNRaw_diff_2NN_flight_data_bs32_ep1000_dp01"
-    data_folder_path = "/media/victor/DATA/rosbag_asta_data/11-07-manual-collisions-for-dataset"
+    model_type = "Contact_FFNNDiff_16hc_100ep"
+    data_folder_path = "/home/victor/ws_sensor_combined/src/flex_sensor/data/22-07-8orien-5pos"
     center_orientations = [0, 45, 90, 135, 180, 225, 270]
     center_displacements = [0.5, 1.0, 1.5, 2.0, 2.5]
-    combined_data = True
+
+    combined_data = False
+    test_with_flight_data = True
+    test_data_folder_path = "/media/victor/DATA/rosbag_asta_data/25-07-manual-flight-collisions"
+    
     train = True
 
     model_output_path = os.path.join(data_folder_path, model_type)
@@ -347,32 +359,50 @@ if __name__ == "__main__":
     if train:
         all_data, all_orientations, all_positions, all_contact = load_dataset(data_folder_path, combined_data)
         scaler = StandardScaler()
-        all_data = calculate_differences(all_data)
-        all_data = scaler.fit_transform(all_data)
+        all_data_diff = calculate_differences(all_data)
+        all_data_diff_scaled = scaler.fit_transform(all_data_diff)
         
 
         joblib.dump(scaler, model_output_path + "/scaler.pkl")
 
-        contact_model, contact_test_loader = train_contact_detection_network(all_data, all_contact, model_output_path, combined_data=combined_data)
+        contact_model, contact_test_loader = train_contact_detection_network(all_data_diff_scaled, all_contact, model_output_path, combined_data=combined_data)
 
         contact_indices = np.where(all_contact > 0)[0]
-        contact_data = all_data[contact_indices]
+        contact_data = all_data_diff_scaled[contact_indices]
         contact_orientations = all_orientations[contact_indices]
         contact_positions = all_positions[contact_indices]
 
         angle_displacement_model, angle_displacement_test_loader = train_angle_displacement_network(contact_data, contact_orientations, contact_positions, model_output_path, combined_data)
 
+    if not combined_data and test_with_flight_data: 
+        scaler_path = f"{model_output_path}/scaler.pkl"
+        scaler = joblib.load(scaler_path)
+        all_data_test, all_orientations_test, all_positions_test, contact_test = load_test_dataset(test_data_folder_path)
+        all_data_diff = calculate_differences(all_data_test)
+        all_data_test_diff_scaled = scaler.transform(all_data_diff)
+
+        # Create dataset and split into training and validation sets
+        test_dataset = FFNNDiffDataset(all_data_test_diff_scaled, angles=all_orientations_test, displacements=all_positions_test, contact=contact_test, raw_values=all_data_test)
+        test_size = len(test_dataset)
+        angle_displacement_test_loader = DataLoader(test_dataset, batch_size=test_size, shuffle=False, drop_last=True)
+
+    if not train: 
+        angle_displacement_model = AngleDisplacementNN(input_size=6, hidden1=16, hidden2=32)
+        angle_displacement_model.load_state_dict(torch.load(model_output_path + "/angle_displacement_model.pth"))
+    
+
     if not train and combined_data:
-        angle_displacement_model = AngleDisplacementNN()
+        angle_displacement_model = AngleDisplacementNN(input_size=6)
         angle_displacement_model.load_state_dict(torch.load(model_output_path + "/angle_displacement_model.pth"))
         scaler_path = f"{model_output_path}/scaler.pkl"
         scaler = joblib.load(scaler_path)
         all_data_test, all_orientations_test, all_positions_test, contact_test = load_test_dataset(data_folder_path)
-        all_data_test = scaler.transform(all_data_test)
         all_data_test = calculate_differences(all_data_test)
+        all_data_test = scaler.transform(all_data_test)
+        
 
         test_dataset = FFNNDiffDataset(all_data_test, angles=all_orientations_test, displacements=all_positions_test, contact=contact_test)
         test_size = len(test_dataset)
         angle_displacement_test_loader = DataLoader(test_dataset, batch_size=test_size, shuffle=False, drop_last=True)
 
-    eval_model(model_output_path, combined_data, angle_displacement_model, angle_displacement_test_loader)
+    eval_model(model_output_path, combined_data, angle_displacement_model, angle_displacement_test_loader, test_with_flight_data=test_with_flight_data)

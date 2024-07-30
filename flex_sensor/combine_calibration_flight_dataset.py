@@ -42,25 +42,21 @@ def list_folders(directory):
     folders = [entry for entry in entries if os.path.isdir(os.path.join(directory, entry))]
     return folders
 
-def read_flight_datasets(bags_folder, eval_bag, filtered = False):
+def read_flight_datasets(bags_folder, eval_bags, filtered=False):
     bags = list_folders(bags_folder)
     file_list = []
 
-    if filtered: 
+    if filtered:
         dataset_file = "flight_dataset_filtered.csv"
-    else: 
+    else:
         dataset_file = "flight_dataset.csv"
 
     for bag in bags:
-        file_dataset = None
-        if bag != eval_bag:
+        if bag not in eval_bags:
             for f in os.listdir(os.path.join(bags_folder, bag)):
                 if f.endswith(dataset_file):
-                    file_dataset = f
-            if file_dataset is not None:
-                file_list.append(os.path.join(bags_folder, bag, file_dataset))
-            else:
-                print(f" Bag {bag} does not have {dataset_file} file")
+                    file_list.append(os.path.join(bags_folder, bag, dataset_file))
+                    break
 
     contact_data = []
     no_contact_data = []
@@ -80,27 +76,29 @@ def balance_dataset(contact_data, no_contact_data):
     no_contact_data_balanced = resample(no_contact_data, replace=False, n_samples=len(contact_data), random_state=42)
     return no_contact_data_balanced
 
-def save_eval_bag_dataset(bags_folder, eval_bag, filtered = False):
-    eval_bag_folder = os.path.join(bags_folder, eval_bag)
-    file_dataset = None
-
-    if filtered: 
+def save_eval_bag_dataset(bags_folder, eval_bags, filtered=False):
+    if filtered:
         dataset_file = "flight_dataset_filtered.csv"
-    else: 
+    else:
         dataset_file = "flight_dataset.csv"
-    
-    for f in os.listdir(eval_bag_folder):
-        if f.endswith(dataset_file):
-            file_dataset = f
-            
-    if file_dataset is not None:
-        eval_data = pd.read_csv(os.path.join(eval_bag_folder, file_dataset))
-                
+
+    eval_data_frames = []
+    for eval_bag in eval_bags:
+        eval_bag_folder = os.path.join(bags_folder, eval_bag)
+        for f in os.listdir(eval_bag_folder):
+            if f.endswith(dataset_file):
+                file_dataset = f
+                eval_data = pd.read_csv(os.path.join(eval_bag_folder, file_dataset))
+                eval_data_frames.append(eval_data)
+                break
+
+    if eval_data_frames:
+        eval_data_combined = pd.concat(eval_data_frames, ignore_index=True)
         eval_path = os.path.join(bags_folder, "eval_" + dataset_file)
-        eval_data.to_csv(eval_path, index=False)
+        eval_data_combined.to_csv(eval_path, index=False)
         print(f"Evaluation dataset saved as eval_{dataset_file} in {eval_path}")
     else:
-        print(f" Evaluation Bag {eval_bag} does not have {dataset_file} file")
+        print(f"No evaluation bags contain {dataset_file} file")
 
 def summarize_dataset(dataset):
     total_entries = len(dataset)
@@ -122,7 +120,7 @@ def summarize_dataset(dataset):
 
 def plot_angle_distribution(contact_data, bags_folder, name):
     plt.figure(figsize=(10, 6))
-    plt.hist(contact_data["angle_gt"], bins=30, edgecolor='k', alpha=0.7)
+    plt.hist(contact_data["angle_gt"], bins=16, edgecolor='k', alpha=0.7)
     plt.title(name)
     plt.xlabel('Angle (degrees)')
     plt.ylabel('Frequency')
@@ -145,22 +143,27 @@ def plot_displacement_distribution(contact_data, bags_folder):
     plt.show()
 
 def main():
-    bags_folder = "/media/victor/DATA/rosbag_asta_data/11-07-manual-collisions-for-dataset"
-    eval_bag = 'rosbag2_2024_07_09-13_57_12'
+    bags_folder = "/media/victor/DATA/rosbag_asta_data/25-07-manual-flight-collisions"
+    eval_bags = [
+        'rosbag2_2024_07_24-12_50_17',
+        'rosbag2_2024_07_24-13_32_39'
+    ]
 
     only_flight = True
-    filtered = True
+    filtered = False
 
-    if filtered: 
+    calib_data_part_from_flight = 8
+
+    if filtered:
         dataset_file = "flight_dataset_filtered.csv"
-    else: 
+    else:
         dataset_file = "flight_dataset.csv"
 
     list_folders(bags_folder)
 
     calibration_folder = "/home/victor/ws_sensor_combined/src/flex_sensor/data/11-07-8orien-5pos"
 
-    contact_flight_data, no_contact_flight_data = read_flight_datasets(bags_folder, eval_bag, filtered)
+    contact_flight_data, no_contact_flight_data = read_flight_datasets(bags_folder, eval_bags, filtered)
 
     if only_flight:
         combined_contact_data = contact_flight_data
@@ -176,7 +179,7 @@ def main():
 
         total_contact_samples = len(contact_flight_data)
         unique_combinations = calibration_data.groupby(['angle_gt', 'displacement_gt']).size().reset_index(name='count')
-        samples_per_combination = total_contact_samples // len(unique_combinations)
+        samples_per_combination = int(total_contact_samples/calib_data_part_from_flight) // len(unique_combinations)
 
         sampled_calibration_data = pd.concat(
             [resample(calibration_data[(calibration_data["angle_gt"] == row["angle_gt"]) & (calibration_data["displacement_gt"] == row["displacement_gt"])],
@@ -195,11 +198,11 @@ def main():
 
     balanced_dataset.to_csv(os.path.join(bags_folder, "balanced_" + dataset_file), index=False)
 
-    save_eval_bag_dataset(bags_folder, eval_bag, filtered)
+    save_eval_bag_dataset(bags_folder, eval_bags, filtered)
 
     flight_summary_df = summarize_dataset(pd.concat([contact_flight_data, no_contact_flight_data], ignore_index=True))
     if not only_flight:
-        calibration_summary_df = summarize_dataset(calibration_data)
+        calibration_summary_df = summarize_dataset(sampled_calibration_data)
     combined_summary_df = summarize_dataset(balanced_dataset)
 
     print("Flight Data Summary:\n", flight_summary_df)
@@ -214,7 +217,7 @@ def main():
 
     plot_angle_distribution(combined_contact_data, bags_folder, 'combined_angle_distribution_contacts')
     if not only_flight:
-        plot_angle_distribution(calibration_data, bags_folder, 'calibration_angle_distribution_contacts')
+        plot_angle_distribution(sampled_calibration_data, bags_folder, 'calibration_angle_distribution_contacts')
     plot_angle_distribution(contact_flight_data, bags_folder, 'flight_angle_distribution_contacts')
 
     plot_displacement_distribution(combined_contact_data, bags_folder)

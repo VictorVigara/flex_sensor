@@ -21,7 +21,7 @@ def create_time_series_windows(data, window_size):
 
     return np.array(windows), np.array(labels)
 
-def read_and_process_datasets(bags_folder, eval_bag, window_size, filtered=False):
+def read_and_process_datasets(bags_folder, eval_bags, window_size, filtered=False):
     bags = list_folders(bags_folder)
     file_list = []
 
@@ -32,7 +32,7 @@ def read_and_process_datasets(bags_folder, eval_bag, window_size, filtered=False
 
     for bag in bags:
         file_dataset = None
-        if bag != eval_bag:
+        if bag not in eval_bags:
             for f in os.listdir(os.path.join(bags_folder, bag)):
                 if f.endswith(dataset_file):
                     file_dataset = f
@@ -56,39 +56,53 @@ def read_and_process_datasets(bags_folder, eval_bag, window_size, filtered=False
 
     return all_windows, all_labels
 
-def create_test_set(bags_folder, eval_bag, window_size, filtered=False):
-    dataset_file = "flight_dataset_filtered.csv" if filtered else "flight_dataset.csv"
-    eval_bag_folder = os.path.join(bags_folder, eval_bag)
+def create_combined_test_set(bags_folder, eval_bags, window_size, filtered=False):
+    all_test_windows = []
+    all_test_labels = []
 
-    file_dataset = None
-    for f in os.listdir(eval_bag_folder):
-        if f.endswith(dataset_file):
-            file_dataset = f
+    for eval_bag in eval_bags:
+        dataset_file = "flight_dataset_filtered.csv" if filtered else "flight_dataset.csv"
+        eval_bag_folder = os.path.join(bags_folder, eval_bag)
 
-    if file_dataset is not None:
-        data = pd.read_csv(os.path.join(eval_bag_folder, file_dataset))
-        windows, labels = create_time_series_windows(data, window_size)
+        file_dataset = None
+        for f in os.listdir(eval_bag_folder):
+            if f.endswith(dataset_file):
+                file_dataset = f
+
+        if file_dataset is not None:
+            data = pd.read_csv(os.path.join(eval_bag_folder, file_dataset))
+            test_windows, test_labels = create_time_series_windows(data, window_size)
+            all_test_windows.append(test_windows)
+            all_test_labels.append(test_labels)
+        else:
+            print(f"Evaluation Bag {eval_bag} does not have {dataset_file} file")
+
+    if all_test_windows and all_test_labels:
+        all_test_windows = np.concatenate(all_test_windows)
+        all_test_labels = np.concatenate(all_test_labels)
+        return all_test_windows, all_test_labels
     else:
-        print(f"Evaluation Bag {eval_bag} does not have {dataset_file} file")
-        windows, labels = None, None
-
-    return windows, labels
+        return None, None
 
 def main():
-    bags_folder = "/media/victor/DATA/rosbag_asta_data/11-07-manual-collisions-for-dataset"
-    eval_bag = 'rosbag2_2024_07_11-13_43_23'
-    window_size = 20  # Define the size of the time series window
+    bags_folder = "/media/victor/DATA/rosbag_asta_data/25-07-manual-flight-collisions"
+    eval_bags = [
+        'rosbag2_2024_07_24-12_50_17',
+        'rosbag2_2024_07_24-13_32_39'
+    ]
+    window_size = 30  # Define the size of the time series window
     filtered = False
 
     # Create train and validation dataset
-    windows, labels = read_and_process_datasets(bags_folder, eval_bag, window_size, filtered)
+    windows, labels = read_and_process_datasets(bags_folder, eval_bags, window_size, filtered)
     np.save(os.path.join(bags_folder, "windows.npy"), windows)
     np.save(os.path.join(bags_folder, "labels.npy"), labels)
 
-    # Create test dataset
-    test_windows, test_labels = create_test_set(bags_folder, eval_bag, window_size, filtered)
-    np.save(os.path.join(bags_folder, "test_windows.npy"), test_windows)
-    np.save(os.path.join(bags_folder, "test_labels.npy"), test_labels)
+    # Create combined test dataset
+    test_windows, test_labels = create_combined_test_set(bags_folder, eval_bags, window_size, filtered)
+    if test_windows is not None and test_labels is not None:
+        np.save(os.path.join(bags_folder, "test_windows.npy"), test_windows)
+        np.save(os.path.join(bags_folder, "test_labels.npy"), test_labels)
 
 if __name__ == "__main__":
     main()

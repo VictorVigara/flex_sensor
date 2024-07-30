@@ -1,0 +1,5 @@
+Contact Detection Accuracy: 1.00
+Contact Detection Precision: 1.00
+Contact Detection Recall: 1.00
+Contact Detection F1 Score: 1.00
+Contact Detection AUC: 1.00
