@@ -5,13 +5,8 @@ import torch
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 
-from .models.CNN_FFNN_Raw_Diff import CNN_FNN_Raw_Diff
-from .models.FFNN_CNN_Raw import CNN_multi_task
-from .models.FFNN_Raw_Diff import FFNNRawDiff
-from .models.FFNN_raw_sincon import FNNRaw_sincos
-from .models.FFNNRaw import FFNNRaw
-
-
+from .models.final_ffnn_raw import ContactDetectionNN
+from .models.final_lstm_windows import RNNModel
 def calculate_differences(data):
     # Calculate differences between pairs of sensor readings
     diff_data = []
@@ -40,84 +35,48 @@ class CollisionDetectorNode(Node):
         # 'knn_raw', 'knn_differences', 'FFNN_CNN_raw',
         # 'FFNNRawDiff',
 
+        #RNN PARAMS 
+        self.rnn_h_size = 16
+        self.windows_size = 20
+
+        self.s1_w = []
+        self.s2_w = []
+        self.s3_w = []
+        self.s4_w = []
+        self.raw_values_window = []
+
         self.contact_threshold = (
             0.9  # Threshold from which a collision is detected [0-1]
         )
 
-        data_folder = "/home/victor/ws_sensor_combined/src/flex_sensor/data"
-        data_date = "19-07-4orient-5pos"
-
-        self.NN_models = (
-            CNN_multi_task,
-            FFNNRaw,
-            FFNNRawDiff,
-            FNNRaw_sincos,
-            CNN_FNN_Raw_Diff,
-        )
-
-        model_folder = f"{data_folder}/{data_date}/{self.model_type}"
+        contact_model_folder =  "/home/blackbird/uav_forest_ws/src/flex_sensor/data/best_models/contact/FFNNRaw_16hc_100ep_16h1_32_h2_300_ep_bs32"
+        ang_disp_model_folder = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/best_models/ang_disp/RNN_w20_flight_data_1layers_16hs_32bs_300_ep"
 
         self.raw_scaler = None
         self.diff_scaler = None
 
         self.model = None
 
-        # Load the trained model
-        if self.model_type == "FFNN_CNN_raw":
-            print(f"Selecting FNN CNN model")
-            model_path = f"{model_folder}/model.pth"
-            self.model = CNN_multi_task()
-        elif self.model_type == "FFNNRaw":
-            model_path = f"{model_folder}/model.pth"
-            self.model = FFNNRaw()
-        elif "FFNNRaw_sincos" in self.model_type:
-            model_path = f"{model_folder}/model.pth"
-            self.model = FNNRaw_sincos()
-        elif self.model_type == "FFNNRawDiff":
-            model_path = f"{model_folder}/model.pth"
-            self.model = FFNNRawDiff()
-            self.raw_scaler = joblib.load(f"{model_folder}/scaler_raw.pkl")
-            self.diff_scaler = joblib.load(f"{model_folder}/scaler_diff.pkl")
-        elif self.model_type == "CNN_FNN_Raw_Diff":
-            model_path = f"{model_folder}/model.pth"
-            self.model = CNN_FNN_Raw_Diff()
-            self.raw_scaler = joblib.load(f"{model_folder}/scaler_raw.pkl")
-            self.diff_scaler = joblib.load(f"{model_folder}/scaler_diff.pkl")
-        elif self.model_type in [
-            "linear_raw",
-            "linear_differences",
-            "knn_raw",
-            "knn_differences",
-        ]:
-            self.model_angle = joblib.load(f"{model_folder}/model_angle.pkl")
-            self.model_disp = joblib.load(f"{model_folder}/model_disp.pkl")
-            self.model_force = joblib.load(f"{model_folder}/model_force.pkl")
-        else:
-            raise ValueError(
-                "Unsupported model type: use 'linear_raw', 'linear_differences', 'knn_raw', 'knn_differences', 'cnn', 'cnn_diverge', 'fnn', or 'CNN_FNN_continuous'"
-            )
+        # LOAD CONTACT MODEL 
+        contact_model_path = f"{contact_model_folder}/contact_detection_model.pth"
+        self.contact_model = ContactDetectionNN()
+        self.contact_model.load_state_dict(torch.load(contact_model_path))
+        self.contact_model.eval()
 
-        if (
-            self.raw_scaler is None
-            and self.diff_scaler is None
-            and self.model_type != "FFNNRaw"
-        ):
-            # Load the scaler
-            scaler_path = f"{model_folder}/scaler.pkl"
-            self.scaler = joblib.load(scaler_path)
+        contact_scaler_path = f"{contact_model_folder}/scaler.pkl"
+        self.contact_scaler = joblib.load(contact_scaler_path)
 
-        # Load min and max values for normalization
-        if self.model_type == "FFNNRaw":
-            normalization_params = joblib.load(
-                f"{model_folder}/normalization_params.pkl"
-            )
-            self.min_values = normalization_params["min_values"]
-            self.max_values = normalization_params["max_values"]
 
-        if isinstance(self.model, self.NN_models):
-            print(f"Charging model {self.model_type}")
-            self.model.load_state_dict(torch.load(model_path))
-            self.model.eval()
+        # LOAD ANGLE DISPLPACEMENT MODEL
+        angle_disp_model_path = f"{ang_disp_model_folder}/angle_displacement_model.pth"
+        self.ang_disp_model = RNNModel(input_size=4, hidden_size=self.rnn_h_size, num_layers=1, windows_size=self.windows_size)
+        self.ang_disp_model.load_state_dict(torch.load(angle_disp_model_path))
+        self.ang_disp_model.eval()
+        
+        # Load the scaler
+        ang_disp_scaler_path = f"{ang_disp_model_folder}/scaler.pkl"
+        self.ang_disp_scaler = joblib.load(ang_disp_scaler_path)
+        
 
         # Initialize ROS2 subscribers and publishers
         self.subscription = self.create_subscription(
@@ -132,123 +91,90 @@ class CollisionDetectorNode(Node):
         )
 
     def listener_callback(self, msg):
-        print(f"RECIBIENDOOOOOOOO")
         raw_values = np.array(msg.data).reshape(1, -1)
 
-        # Calculate differences if required
-        if self.raw_scaler and self.diff_scaler:
-            diff_values = calculate_differences(raw_values)
-            diff_normalized_values = self.diff_scaler.transform(diff_values)
-            raw_normalized_values = calculate_differences(raw_values)
-            raw_normalized_values = self.raw_scaler.transform(raw_values)
-        elif self.model_type == "FFNNRaw":
-            print("Normalizing values")
-            raw_normalized_values = normalize_data(
-                raw_values, self.min_values, self.max_values
-            )
-        else:
-            # Normalize the raw values using the loaded min and max values
-            # raw_normalized_values = normalize_data(raw_values, self.min_values, self.max_values)
-            raw_normalized_values = self.scaler.transform(raw_values)
+        # Scale values for contact model
+        contact_values = self.contact_scaler.transform(raw_values)
+        contact_input = torch.tensor(contact_values, dtype=torch.float32)
 
-        # Convert to torch tensor if needed
-        if (
-            isinstance(self.model, self.NN_models)
-            and not self.raw_scaler
-            and not self.diff_scaler
-        ):
-            input_tensor = torch.tensor(raw_normalized_values, dtype=torch.float32)
+        # Prepare RNN values
+        windows_ready = False
+        if len(self.s1_w) == self.windows_size:
+            self.s1_w.pop(0)
+            self.s1_w.append(raw_values[0][0])
+            self.s2_w.pop(0)
+            self.s2_w.append(raw_values[0][1])
+            self.s3_w.pop(0)
+            self.s3_w.append(raw_values[0][2])
+            self.s4_w.pop(0)
+            self.s4_w.append(raw_values[0][3])
 
-            if "CNN" in self.model_type:
-                input_tensor = input_tensor.reshape(
-                    -1, 1, 2, 2
-                )  # Reshape for CNN input
+            self.raw_values_window.pop(0)
+            self.raw_values_window.append([raw_values[0][0], raw_values[0][1], raw_values[0][2], raw_values[0][3]])
 
-            if "sincos" in self.model_type:
-                with torch.no_grad():
-                    (
-                        force_applied,
-                        angle_sin_preds,
-                        angle_cos_preds,
-                        displacement,
-                    ) = self.model(input_tensor)
+            raw_values_windows = [self.s1_w, self.s2_w, self.s3_w, self.s4_w]
+            windows_array = np.array(self.raw_values_window)
+            #windows_array = windows_array.reshape(windows_array.shape[1], windows_array.shape[0])
+            windows_scaled = self.ang_disp_scaler.transform(windows_array)
+            windows_tensor = torch.tensor(windows_scaled, dtype=torch.float32).unsqueeze(0)
+            windows_ready = True
 
-                # Process the predictions
-                contact = force_applied.item() > self.contact_threshold
-                angle_value = float(
-                    torch.atan2(angle_sin_preds, angle_cos_preds) * 180 / np.pi
-                )
-                if angle_value < 0:
-                    angle_value = angle_value + 360
-                displacement_value = displacement.item()
-            else:
-                # Get predictions from the model
-                with torch.no_grad():
-                    force_applied, angle, displacement = self.model(input_tensor)
+        else: 
+            self.s1_w.append(raw_values[0][0])
+            self.s2_w.append(raw_values[0][1])
+            self.s3_w.append(raw_values[0][2])
+            self.s4_w.append(raw_values[0][3])
 
-                # Process the predictions
-                contact = force_applied.item() > self.contact_threshold
-                angle_value = angle.item() * 360.0  # Convert angle back to degrees
-                print(angle_value)
-                """ angle_value -= 90 """
-                if angle_value > 360:
-                    angle_value -= 360
+            self.raw_values_window.append([raw_values[0][0], raw_values[0][1], raw_values[0][2], raw_values[0][3]])
 
-                if angle_value < 0:
-                    angle_value = angle_value + 360
-                displacement_value = displacement.item()
 
-        elif (
-            isinstance(self.model, self.NN_models)
-            and self.raw_scaler
-            and self.diff_scaler
-        ):
-            raw_input_tensor = torch.tensor(raw_normalized_values, dtype=torch.float32)
-            diff_input_tensor = torch.tensor(
-                diff_normalized_values, dtype=torch.float32
-            )
-
-            if "CNN" in self.model_type:
-                raw_input_tensor = raw_input_tensor.reshape(
-                    -1, 1, 2, 2
-                )  # Reshape for CNN input
-
-            # Get predictions from the model
+        if windows_ready:
             with torch.no_grad():
-                force_applied, angle, displacement = self.model(
-                    raw_input_tensor, diff_input_tensor
-                )
+                contact_predicted = self.contact_model(contact_input)
+                sin_angle_preds, cos_angle_preds, displacement_pred = self.ang_disp_model(windows_tensor)
 
-            # Process the predictions
-            contact = force_applied.item() > self.contact_threshold
-            angle_value = angle.item() * 360.0  # Convert angle back to degrees
-            print(f"original output: {angle_value}")
-            """ angle_value -= 90 """
-            if angle_value > 360:
-                angle_value -= 360
+            contact = contact_predicted.item() > self.contact_threshold
+            if contact:
+                contact_value = 1.0
+            else:
+                contact_value = 0.0
+            
+            predicted_sin_angles = sin_angle_preds.squeeze()
+            predicted_cos_angles = cos_angle_preds.squeeze()
 
-            if angle_value < 0:
-                angle_value = angle_value + 360
-            print(f"Corrected angle: {angle_value}")
-            displacement_value = displacement.item()
+            # Convert predicted sin/cos to angles
+            predicted_angle = np.array(torch.atan2(predicted_sin_angles, predicted_cos_angles) * (360.0 / (2 * np.pi)))
 
-        else:
-            # Get predictions from sklearn model
-            force_applied = self.model_force.predict(raw_normalized_values)
-            angle_value = self.model_angle.predict(raw_normalized_values)
-            displacement_value = self.model_disp.predict(raw_normalized_values)
+            if predicted_angle.item() < 0:
+                predicted_angle = predicted_angle.item() + 360
+            else:
+                predicted_angle = predicted_angle.item()
 
-            contact = force_applied[0] > self.contact_threshold
-            angle_value = angle_value[0] * 360.0  # Convert angle back to degrees
-            displacement_value = displacement_value[0]
+            displacement_pred = displacement_pred.item()
 
-        print(
-            force_applied
-            if isinstance(force_applied, torch.Tensor)
-            else force_applied[0]
+            if contact: 
+                print(f"Contact angle:{predicted_angle} / disp: {displacement_pred}")
+
+            # Publish collision information
+            self.collision_msg = Float32MultiArray()
+            self.collision_msg.data = [
+                contact_value,
+                predicted_angle,
+                displacement_pred,
+            ]
+            self.collision_publisher.publish(self.collision_msg)
+        
+        """ # Process the predictions
+        contact = force_applied.item() > self.contact_threshold
+        angle_value = float(
+            torch.atan2(angle_sin_preds, angle_cos_preds) * 180 / np.pi
         )
+        if angle_value < 0:
+            angle_value = angle_value + 360
+        displacement_value = displacement.item() """
+            
 
-        if contact:
+        """ if contact:
             contact_value = 1.0
         else:
             contact_value = 0.0
@@ -262,7 +188,7 @@ class CollisionDetectorNode(Node):
             force_applied.item(),
         ]
         self.collision_publisher.publish(self.collision_msg)
-
+ """
 
 def main(args=None):
     rclpy.init(args=args)
