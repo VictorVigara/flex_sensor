@@ -99,32 +99,16 @@ class CollisionDetectorNode(Node):
 
         # Prepare RNN values
         windows_ready = False
-        if len(self.s1_w) == self.windows_size:
-            self.s1_w.pop(0)
-            self.s1_w.append(raw_values[0][0])
-            self.s2_w.pop(0)
-            self.s2_w.append(raw_values[0][1])
-            self.s3_w.pop(0)
-            self.s3_w.append(raw_values[0][2])
-            self.s4_w.pop(0)
-            self.s4_w.append(raw_values[0][3])
-
+        if len(self.raw_values_window) == self.windows_size:
             self.raw_values_window.pop(0)
             self.raw_values_window.append([raw_values[0][0], raw_values[0][1], raw_values[0][2], raw_values[0][3]])
 
-            raw_values_windows = [self.s1_w, self.s2_w, self.s3_w, self.s4_w]
             windows_array = np.array(self.raw_values_window)
-            #windows_array = windows_array.reshape(windows_array.shape[1], windows_array.shape[0])
             windows_scaled = self.ang_disp_scaler.transform(windows_array)
             windows_tensor = torch.tensor(windows_scaled, dtype=torch.float32).unsqueeze(0)
             windows_ready = True
 
         else: 
-            self.s1_w.append(raw_values[0][0])
-            self.s2_w.append(raw_values[0][1])
-            self.s3_w.append(raw_values[0][2])
-            self.s4_w.append(raw_values[0][3])
-
             self.raw_values_window.append([raw_values[0][0], raw_values[0][1], raw_values[0][2], raw_values[0][3]])
 
 
@@ -134,10 +118,7 @@ class CollisionDetectorNode(Node):
                 sin_angle_preds, cos_angle_preds, displacement_pred = self.ang_disp_model(windows_tensor)
 
             contact = contact_predicted.item() > self.contact_threshold
-            if contact:
-                contact_value = 1.0
-            else:
-                contact_value = 0.0
+            
             
             predicted_sin_angles = sin_angle_preds.squeeze()
             predicted_cos_angles = cos_angle_preds.squeeze()
@@ -152,8 +133,12 @@ class CollisionDetectorNode(Node):
 
             displacement_pred = displacement_pred.item()
 
-            if contact: 
-                print(f"Contact angle:{predicted_angle} / disp: {displacement_pred}")
+            if contact:
+                contact_value = 1.0
+            else:
+                contact_value = 0.0
+                predicted_angle = 0.0
+                displacement_pred = 0.0
 
             # Publish collision information
             self.collision_msg = Float32MultiArray()
@@ -163,32 +148,6 @@ class CollisionDetectorNode(Node):
                 displacement_pred,
             ]
             self.collision_publisher.publish(self.collision_msg)
-        
-        """ # Process the predictions
-        contact = force_applied.item() > self.contact_threshold
-        angle_value = float(
-            torch.atan2(angle_sin_preds, angle_cos_preds) * 180 / np.pi
-        )
-        if angle_value < 0:
-            angle_value = angle_value + 360
-        displacement_value = displacement.item() """
-            
-
-        """ if contact:
-            contact_value = 1.0
-        else:
-            contact_value = 0.0
-
-        # Publish collision information
-        self.collision_msg = Float32MultiArray()
-        self.collision_msg.data = [
-            contact_value,
-            angle_value,
-            displacement_value,
-            force_applied.item(),
-        ]
-        self.collision_publisher.publish(self.collision_msg)
- """
 
 def main(args=None):
     rclpy.init(args=args)
