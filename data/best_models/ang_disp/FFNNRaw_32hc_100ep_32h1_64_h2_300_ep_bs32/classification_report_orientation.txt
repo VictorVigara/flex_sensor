@@ -1,0 +1,32 @@
+Confusion Matrix:
+[[93  3  0  2  0  5 27]
+ [13 19  4  0  0  0  0]
+ [ 0  1 53  0  0  0  0]
+ [ 0  6  4 30 10  3  0]
+ [ 0  1  0  3 45  3  0]
+ [ 0  0  0  4 14 26  9]
+ [ 1  0  0  0  0  2 75]]
+
+Classification Report:
+              precision    recall  f1-score   support
+
+    0°±22.5°       0.87      0.72      0.78       130
+   45°±22.5°       0.63      0.53      0.58        36
+   90°±22.5°       0.87      0.98      0.92        54
+  135°±22.5°       0.77      0.57      0.65        53
+  180°±22.5°       0.65      0.87      0.74        52
+  225°±22.5°       0.67      0.49      0.57        53
+  270°±22.5°       0.68      0.96      0.79        78
+
+    accuracy                           0.75       456
+   macro avg       0.73      0.73      0.72       456
+weighted avg       0.76      0.75      0.74       456
+
+
+Angle MAE = 16.57473930414652 degrees
+Angle MSE = 780.18 degrees
+Angle RMSE = 27.93 degrees
+Angle StdDev = 22.48 degrees
+Angle Median = 7.73 degrees
+Angle IQR = 18.27 degrees
+Angle Max = 171.40 degrees

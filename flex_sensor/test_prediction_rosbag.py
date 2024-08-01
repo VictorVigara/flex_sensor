@@ -5,7 +5,7 @@ import torch
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 
-from .models.final_ffnn_raw import ContactDetectionNN
+from .models.final_ffnn_raw import ContactDetectionNN, AngleDisplacementNN
 from .models.final_lstm_windows import RNNModel
 def calculate_differences(data):
     # Calculate differences between pairs of sensor readings
@@ -31,13 +31,15 @@ class CollisionDetectorNode(Node):
     def __init__(self):
         super().__init__("collision_detector_node")
 
-        self.model_type = "FFNNRaw_sincos_nocont_0grad_64hidden_bs32"  # 'FFNNRaw', 'linear_raw', 'linear_differences',
-        # 'knn_raw', 'knn_differences', 'FFNN_CNN_raw',
-        # 'FFNNRawDiff',
+        self.angle_model_type = "FFNN" #RNN
 
         #RNN PARAMS 
-        self.rnn_h_size = 16
-        self.windows_size = 20
+        self.rnn_h_size = 32
+        self.windows_size = 30
+
+        # FFNN params
+        self.ffn_h1 = 32
+        self.ffn_h2 = 64
 
         self.s1_w = []
         self.s2_w = []
@@ -46,11 +48,20 @@ class CollisionDetectorNode(Node):
         self.raw_values_window = []
 
         self.contact_threshold = (
-            0.9  # Threshold from which a collision is detected [0-1]
+            0.99  # Threshold from which a collision is detected [0-1]
         )
 
         contact_model_folder =  "/home/blackbird/uav_forest_ws/src/flex_sensor/data/best_models/contact/FFNNRaw_16hc_100ep_16h1_32_h2_300_ep_bs32"
-        ang_disp_model_folder = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/best_models/ang_disp/RNN_w20_flight_data_1layers_16hs_32bs_300_ep"
+        rnn_ang_disp_folder = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/best_models/ang_disp/RNN_w30_flight_data_1layers_32hs_32bs_300_ep"
+
+        ffnn_ang_disp_folder = "/home/blackbird/uav_forest_ws/src/flex_sensor/data/best_models/ang_disp/FFNNRaw_32hc_100ep_32h1_64_h2_300_ep_bs32"
+
+
+
+        if self.angle_model_type == "RNN": 
+            ang_disp_model_folder = rnn_ang_disp_folder
+        else: 
+            ang_disp_model_folder = ffnn_ang_disp_folder
 
         self.raw_scaler = None
         self.diff_scaler = None
@@ -69,7 +80,11 @@ class CollisionDetectorNode(Node):
 
         # LOAD ANGLE DISPLPACEMENT MODEL
         angle_disp_model_path = f"{ang_disp_model_folder}/angle_displacement_model.pth"
-        self.ang_disp_model = RNNModel(input_size=4, hidden_size=self.rnn_h_size, num_layers=1, windows_size=self.windows_size)
+
+        if self.angle_model_type == "RNN":
+            self.ang_disp_model = RNNModel(input_size=4, hidden_size=self.rnn_h_size, num_layers=1, windows_size=self.windows_size)
+        else: 
+            self.ang_disp_model = AngleDisplacementNN(input_size=4, hidden1=self.ffn_h1, hidden2=self.ffn_h2)
         self.ang_disp_model.load_state_dict(torch.load(angle_disp_model_path))
         self.ang_disp_model.eval()
         
@@ -98,24 +113,28 @@ class CollisionDetectorNode(Node):
         contact_input = torch.tensor(contact_values, dtype=torch.float32)
 
         # Prepare RNN values
-        windows_ready = False
-        if len(self.raw_values_window) == self.windows_size:
-            self.raw_values_window.pop(0)
-            self.raw_values_window.append([raw_values[0][0], raw_values[0][1], raw_values[0][2], raw_values[0][3]])
+        if self.angle_model_type == "RNN":
+            windows_ready = False
+            if len(self.raw_values_window) == self.windows_size:
+                self.raw_values_window.pop(0)
+                self.raw_values_window.append([raw_values[0][0], raw_values[0][1], raw_values[0][2], raw_values[0][3]])
 
-            windows_array = np.array(self.raw_values_window)
-            windows_scaled = self.ang_disp_scaler.transform(windows_array)
-            windows_tensor = torch.tensor(windows_scaled, dtype=torch.float32).unsqueeze(0)
-            windows_ready = True
+                windows_array = np.array(self.raw_values_window)
+                windows_scaled = self.ang_disp_scaler.transform(windows_array)
+                angle_disp_tensor = torch.tensor(windows_scaled, dtype=torch.float32).unsqueeze(0)
+                windows_ready = True
 
+            else: 
+                self.raw_values_window.append([raw_values[0][0], raw_values[0][1], raw_values[0][2], raw_values[0][3]])
         else: 
-            self.raw_values_window.append([raw_values[0][0], raw_values[0][1], raw_values[0][2], raw_values[0][3]])
+            ffnn_angle_input = self.ang_disp_scaler.transform(raw_values)
+            angle_disp_tensor = torch.tensor(ffnn_angle_input, dtype=torch.float32)
 
 
-        if windows_ready:
+        if (self.angle_model_type == "RNN" and windows_ready) or self.angle_model_type != "RNN":
             with torch.no_grad():
                 contact_predicted = self.contact_model(contact_input)
-                sin_angle_preds, cos_angle_preds, displacement_pred = self.ang_disp_model(windows_tensor)
+                sin_angle_preds, cos_angle_preds, displacement_pred = self.ang_disp_model(angle_disp_tensor)
 
             contact = contact_predicted.item() > self.contact_threshold
             
