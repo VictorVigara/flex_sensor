@@ -17,7 +17,7 @@ class flexDriver(Node):
         ### PARAMETERS ###
         ##################
 
-        self.timer_period = 0.01  # Sensor reading frequency
+        self.timer_period = 0.05  # Sensor reading frequency
 
         self.n_sensors = 4
         self.sensor_locations = [
@@ -36,7 +36,7 @@ class flexDriver(Node):
         self.linear_plot = False
 
         self.record_data = False
-        self.record_time = 10
+        self.record_time = 5
 
         self.calibration = False
 
